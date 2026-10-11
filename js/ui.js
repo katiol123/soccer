@@ -18,6 +18,10 @@
         own: (club) => this.st && club.id === this.st.userClub,
         open: (p, club) => this.renewModal(p, club)
       };
+      UI.buyHook = {
+        can: (p, club) => this.st && this.st.userClub && club.id !== this.st.userClub && G.TR.windowState(this.st).open,
+        open: (p) => this.buyModal(p.id)
+      };
       try { SFX.on = localStorage.getItem('m3-sound') !== 'off'; } catch (e) { /* */ }
       document.addEventListener('pointerdown', () => SFX.ensure(), { once: true });
       this.menu();
@@ -161,7 +165,7 @@
       const uc = st.userClub ? LEAGUE.club(st, st.userClub) : null;
       if (uc) { root.style.setProperty('--c1', uc.c1); root.style.setProperty('--c2', uc.c2); }
       const nav = el('nav.hub-nav');
-      const tabs = [['home', 'Главная'], ['squad', uc ? 'Состав и тактика' : 'Клубы'], ['table', 'Таблица'], ['fixtures', 'Календарь'], ['stats', 'Статистика'], ['finance', 'Финансы']];
+      const tabs = [['home', 'Главная'], ['squad', uc ? 'Состав и тактика' : 'Клубы'], ['table', 'Таблица'], ['fixtures', 'Календарь'], ['stats', 'Статистика'], ['finance', 'Финансы'], ['transfers', 'Трансферы']];
       tabs.forEach(([k, n]) => nav.appendChild(el('button' + (this.tab === k ? '.on' : ''), { text: n, onclick: () => this.hub(k) })));
       const top = el('header.topbar', null, [
         el('div.tb-brand', { onclick: () => this.gameMenu() }, [el('span.tb-logo', { text: 'К' }), el('span', { text: 'КОМБИНАЦИЯ' })]),
@@ -172,7 +176,7 @@
       root.appendChild(top);
       const body = el('div.hub-body');
       root.appendChild(body);
-      ({ home: () => this.tabHome(body), squad: () => this.tabSquad(body), table: () => this.tabTable(body), fixtures: () => this.tabFixtures(body), stats: () => this.tabStats(body), finance: () => this.tabFinance(body) })[this.tab]();
+      ({ home: () => this.tabHome(body), squad: () => this.tabSquad(body), table: () => this.tabTable(body), fixtures: () => this.tabFixtures(body), stats: () => this.tabStats(body), finance: () => this.tabFinance(body), transfers: () => this.tabTransfers(body) })[this.tab]();
       this.show(root);
     },
 
@@ -210,6 +214,7 @@
       main.appendChild(this.roundCard());
       // мини-таблица
       side.appendChild(this.miniTable());
+      if (uc && uc.fin) side.appendChild(this.transferMini(uc));
       if (uc && uc.fin) side.appendChild(this.financeMini(uc));
       if (uc) {
         const last = [];
@@ -594,6 +599,247 @@
       } else body.appendChild(card);
     },
 
+    /* ---------- Трансферы ---------- */
+    transferMini(c) {
+      const st = this.st, w = G.TR.windowState(st), m = G.TR.market(st);
+      const box = el('div.card.fin-mini', { onclick: () => this.hub('transfers') }, [el('h3', { text: 'Трансферы' })]);
+      box.appendChild(el('div.fm-row', null, [el('span', { text: w.name }), el('b', { text: w.open ? '🟢 ' + w.text : '🔴 ' + w.text })]));
+      box.appendChild(el('div.fm-row', null, [el('span', { text: 'Бюджет' }), el('b', { text: G.FIN.fmtM(c.fin.transferBudget || 0) })]));
+      if (m.offers.length) box.appendChild(el('div.fm-warn', { text: `📨 Входящих предложений: ${m.offers.length}` }));
+      const req = c.players.filter(p => p.treq && !m.listed.includes(p.id));
+      if (req.length) box.appendChild(el('div.fm-warn', { text: `✉ Просят о трансфере: ${req.map(p => p.name).join(', ')}` }));
+      return box;
+    },
+
+    tabTransfers(body) {
+      const st = this.st, w = G.TR.windowState(st), m = G.TR.market(st);
+      if (!st.userClub) {
+        const wrap = el('div.fin-wrap');
+        wrap.appendChild(el('div.kpis', null, [el('div.card.kpi' + (w.open ? '.ok' : '.neg'), null, [el('small', { text: w.name }), el('b', { text: w.open ? 'Открыто' : 'Закрыто' }), el('span', { text: w.text })]),
+          el('div.card.kpi', null, [el('small', { text: 'Сделок за всё время' }), el('b', { text: m.history.filter(h => h.to).length }), el('span', { text: 'клубы-ИИ покупают под нужды состава и идеи тренера' })])]));
+        const card = el('div.card.wide-card');
+        this.trHistory(card);
+        wrap.appendChild(card);
+        body.appendChild(wrap);
+        return;
+      }
+      const me = LEAGUE.club(st, st.userClub);
+      this.trTab = this.trTab || 'search';
+      const wrap = el('div.fin-wrap');
+      const kpi = (label, val, sub, cls) => el('div.card.kpi' + (cls ? '.' + cls : ''), null, [el('small', { text: label }), el('b', { text: val }), sub ? el('span', { text: sub }) : null]);
+      wrap.appendChild(el('div.kpis', null, [
+        kpi(w.name, w.open ? 'Открыто' : 'Закрыто', w.text, w.open ? 'ok' : 'neg'),
+        kpi('Трансферный бюджет', G.FIN.fmtM(me.fin.transferBudget || 0), '70% от продаж возвращается в бюджет'),
+        kpi('Зарплаты', `£${G.FIN.wageBill(me)} / ${me.fin.wageBudget} тыс.`, 'ведомость / бюджет в неделю', G.FIN.wageBill(me) > me.fin.wageBudget ? 'neg' : ''),
+        kpi('Состав', `${me.players.length} / ${G.TR.MAX_SQUAD}`, 'максимум игроков в заявке')
+      ]));
+      const tabs = el('div.seg.tr-tabs');
+      [['search', 'Поиск'], ['offers', `Предложения${m.offers.length ? ' (' + m.offers.length + ')' : ''}`], ['sell', 'Продажа'], ['short', `Избранное${m.short.length ? ' (' + m.short.length + ')' : ''}`], ['history', 'История']].forEach(([k, n]) => tabs.appendChild(el('button' + (this.trTab === k ? '.on' : ''), { text: n, onclick: () => { this.trTab = k; this.hub('transfers'); } })));
+      wrap.appendChild(tabs);
+      const card = el('div.card.wide-card');
+      if (this.trTab === 'search') this.trSearch(card);
+      else if (this.trTab === 'short') this.trList(card, G.TR.search(st, {}).filter(x => m.short.includes(x.p.id)), 'Избранное пусто — отмечайте игроков звёздочкой в поиске.');
+      else if (this.trTab === 'offers') this.trOffers(card);
+      else if (this.trTab === 'sell') this.trSell(card);
+      else this.trHistory(card);
+      wrap.appendChild(card);
+      body.appendChild(wrap);
+    },
+
+    trSearch(card) {
+      const st = this.st;
+      const f = this.trF = this.trF || { pos: 'ALL', sort: 'ovr', maxAge: 0, minOvr: 0, maxPrice: 0, listedOnly: false, q: '', trait: '' };
+      const bar = el('div.tr-filters');
+      const sel = (opts, key, conv) => { const s = el('select', { onchange: (e) => { f[key] = conv ? conv(e.target.value) : e.target.value; render(); } }); opts.forEach(([v, n]) => { const o = el('option', { value: v, text: n }); if (String(f[key]) === String(v)) o.selected = true; s.appendChild(o); }); return s; };
+      bar.append(
+        el('input.tr-q', { placeholder: 'Имя игрока…', value: f.q, oninput: (e) => { f.q = e.target.value; render(); } }),
+        sel([['ALL', 'Все позиции'], ['GK', 'Вратари'], ['DF', 'Защитники'], ['MF', 'Полузащитники'], ['FW', 'Нападающие']], 'pos'),
+        sel([[0, 'Любой возраст'], [21, 'до 21'], [23, 'до 23'], [26, 'до 26'], [29, 'до 29']], 'maxAge', Number),
+        sel([[0, 'Любой рейтинг'], [13, '13+'], [14, '14+'], [15, '15+'], [16, '16+'], [17, '17+']], 'minOvr', Number),
+        sel([[0, 'Любая цена'], [5, 'до £5 млн'], [15, 'до £15 млн'], [30, 'до £30 млн'], [60, 'до £60 млн'], [100, 'до £100 млн']], 'maxPrice', Number),
+        sel([['', 'Любая особенность']].concat(Object.keys(G.TRAITS.LIST).map(k => [k, G.TRAITS.LIST[k].i + ' ' + G.TRAITS.LIST[k].n])), 'trait'),
+        sel([['ovr', 'Сорт.: рейтинг'], ['value', 'Сорт.: дороже'], ['cheap', 'Сорт.: дешевле'], ['age', 'Сорт.: моложе']], 'sort'),
+        el('label.tr-chk', null, [el('input', { type: 'checkbox', checked: f.listedOnly || null, onchange: (e) => { f.listedOnly = e.target.checked; render(); } }), ' только продаваемые'])
+      );
+      card.appendChild(bar);
+      const host = el('div');
+      card.appendChild(host);
+      const render = () => { host.innerHTML = ''; this.trList(host, G.TR.search(st, f).slice(0, 80), 'Никого не найдено — ослабьте фильтры.'); };
+      render();
+    },
+
+    trList(host, rows, empty) {
+      const st = this.st, m = G.TR.market(st), w = G.TR.windowState(st);
+      if (!rows.length) { host.appendChild(el('div.muted', { text: empty })); return; }
+      const tbl = el('table.squad');
+      tbl.appendChild(el('thead', null, [el('tr', null, ['', 'Поз', 'Игрок', 'Клуб', 'Воз', 'Рейт', 'Форма', 'Статус', 'Стоимость', 'Зарплата', 'Контр.', ''].map(t => el('th', { text: t })))]));
+      const tb = el('tbody');
+      rows.forEach(({ p, c, ovr, v, listed, st: s, nfs }) => {
+        const starOn = m.short.includes(p.id);
+        tb.appendChild(el('tr', { onclick: () => UI.playerModal(p, c) }, [
+          el('td', null, [el('button.star-btn' + (starOn ? '.on' : ''), { text: starOn ? '★' : '☆', title: 'Избранное', onclick: (e) => { e.stopPropagation(); m.short = starOn ? m.short.filter(id => id !== p.id) : m.short.concat([p.id]); e.target.classList.toggle('on'); e.target.textContent = m.short.includes(p.id) ? '★' : '☆'; LEAGUE.save(st); } })]),
+          el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]),
+          el('td.pname', null, [p.name + ' ', UI.traitIcons(p)]),
+          el('td', null, [UI.crest(c, 20), ' ' + c.short]),
+          el('td', { text: p.age }),
+          el('td', null, [el('b', { text: ovr.toFixed(1), style: { color: U.attrColor(ovr) } })]),
+          el('td', null, [UI.formBadge(p)]),
+          el('td', null, [el('span.tr-st.' + (nfs ? 'nfs' : listed ? 'listed' : s), { text: nfs ? 'Не продаётся' : listed ? 'Готовы продать' : G.TR.STATUS_TXT[s] })]),
+          el('td', { text: G.FIN.fmtM(v) }),
+          el('td', { text: '£' + p.wage + 'к' }),
+          el('td', { text: p.contract }),
+          el('td', null, [w.open && st.userClub && !nfs ? el('button.btn.small', { text: 'Купить', onclick: (e) => { e.stopPropagation(); this.buyModal(p.id); } }) : null])
+        ]));
+      });
+      tbl.appendChild(tb);
+      host.appendChild(el('div.table-scroll', null, [tbl]));
+    },
+
+    trOffers(card) {
+      const st = this.st, m = G.TR.market(st);
+      card.appendChild(el('h3', { text: 'Входящие предложения' }));
+      if (!m.offers.length) { card.appendChild(el('div.muted', { text: G.TR.windowState(st).open ? 'Пока предложений нет. Выставьте игроков на трансфер во вкладке «Продажа» — клубы начнут присылать ставки после туров.' : 'Окно закрыто.' })); return; }
+      m.offers.forEach(o => {
+        const f = G.TR.findPlayer(st, o.pid), buyer = LEAGUE.club(st, o.from);
+        if (!f || !buyer) return;
+        const p = f.p;
+        const row = el('div.offer', null, [
+          UI.crest(buyer, 34),
+          el('div.offer-t', null, [el('b', { text: `«${buyer.name}» → ${p.name}` }), el('small', { text: `${UI.posName(p.pos)}, ${p.age} · рейтинг ${TAC.overall(p).toFixed(1)} · стоимость ${G.FIN.fmtM(G.FIN.value(p))} · действует до ${o.expires + 1}-го тура` })]),
+          el('div.offer-fee', { text: G.FIN.fmtM(o.fee) }),
+          el('div.offer-act', null, [
+            el('button.btn.small.primary', { text: 'Принять', onclick: () => this.answer(o.id, 'accept') }),
+            el('button.btn.small', { text: 'Хочу больше', disabled: o.haggled || null, onclick: () => this.answer(o.id, 'more') }),
+            el('button.btn.small.ghost', { text: 'Отклонить', onclick: () => this.answer(o.id, 'reject') })
+          ])
+        ]);
+        card.appendChild(row);
+      });
+    },
+
+    answer(id, action) {
+      const r = G.TR.answerOffer(this.st, id, action);
+      UI.toast(r.msg, r.ok ? '' : 'warn');
+      LEAGUE.save(this.st);
+      this.hub('transfers');
+    },
+
+    trSell(card) {
+      const st = this.st, me = LEAGUE.club(st, st.userClub), m = G.TR.market(st);
+      card.appendChild(el('h3', { text: 'Продажа игроков' }));
+      card.appendChild(el('div.muted.small-note', { text: 'Выставленные игроки чаще получают предложения, но клубы предлагают меньше. За сильных игроков клубы могут прислать предложение и без выставления. Предложения приходят после туров, пока открыто окно.' }));
+      const tbl = el('table.squad');
+      tbl.appendChild(el('thead', null, [el('tr', null, ['Поз', 'Игрок', 'Воз', 'Рейт', 'Настр.', 'Стоимость', 'Зарплата', 'Контр.', ''].map(t => el('th', { text: t })))]));
+      const tb = el('tbody');
+      me.players.slice().sort((a, b) => (b.treq ? 1 : 0) - (a.treq ? 1 : 0) || TAC.overall(b) - TAC.overall(a)).forEach(p => {
+        const on = m.listed.includes(p.id);
+        const ml = G.FIN.moodLabel(p.mood == null ? 60 : p.mood);
+        tb.appendChild(el('tr' + (on ? '.listed-row' : ''), { onclick: () => UI.playerModal(p, me) }, [
+          el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]),
+          el('td.pname', null, [p.name + ' ', UI.traitIcons(p), p.treq ? el('span.treq', { text: ' ✉ просит трансфер' }) : null]),
+          el('td', { text: p.age }), el('td', null, [el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })]),
+          el('td', { text: ml[1], title: ml[0] }), el('td', { text: G.FIN.fmtM(G.FIN.value(p)) }), el('td', { text: '£' + p.wage + 'к' }), el('td', { text: p.contract }),
+          el('td', null, [el('button.btn.small' + (on ? '.on' : ''), { text: on ? 'Снять с трансфера' : 'Выставить', onclick: (e) => { e.stopPropagation(); G.TR.list(st, p.id, !on); LEAGUE.save(st); this.hub('transfers'); } })])
+        ]));
+      });
+      tbl.appendChild(tb);
+      card.appendChild(el('div.table-scroll', null, [tbl]));
+    },
+
+    trHistory(card) {
+      const st = this.st, m = G.TR.market(st);
+      card.appendChild(el('h3', { text: 'История трансферов' }));
+      if (!m.history.length) { card.appendChild(el('div.muted', { text: 'Сделок пока не было.' })); return; }
+      m.history.slice().reverse().forEach(h => {
+        const a = LEAGUE.club(st, h.from), b = h.to ? LEAGUE.club(st, h.to) : null;
+        if (!b) { card.appendChild(el('div.hist-row', null, [el('small', { text: `${h.season}, тур ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ` ${a.short} → свободный агент`]), el('b', { text: '—' })])); return; }
+        const mine = h.to === st.userClub ? 'in' : h.from === st.userClub ? 'out' : '';
+        card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, тур ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ` ${a.short} → `, UI.crest(b, 18), ` ${b.short}`]), el('b', { text: G.FIN.fmtM(h.fee) })]));
+      });
+    },
+
+    /* Переговоры о покупке: клуб → личные условия */
+    buyModal(pid) {
+      const st = this.st, TR = G.TR;
+      const f = TR.findPlayer(st, pid); if (!f) return;
+      const { p, c: seller } = f, me = LEAGUE.club(st, st.userClub);
+      const n = TR.neg(st, pid);
+      const content = el('div.renew');
+      let md;
+      const v = G.FIN.value(p);
+      const head = el('div.pc-head', null, [UI.crest(seller, 44), el('div', null, [el('div.pc-name', { text: p.name }), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · «${seller.name}» · ${TR.aiListed(seller, p) ? 'клуб готов продать' : TR.STATUS_TXT[TR.status(seller, p)]}` })])]);
+      const stepClub = () => {
+        content.innerHTML = '';
+        content.appendChild(head);
+        const nfs = TR.notForSale(st, seller, p);
+        const ask = TR.asking(st, seller, p);
+        const info = el('div.renew-info', null, [
+          el('div', null, [el('small', { text: 'Рыночная стоимость' }), el('b', { text: G.FIN.fmtM(v) })]),
+          el('div', null, [el('small', { text: 'Ориентир клуба (оценка скаутов)' }), el('b', { text: nfs ? 'не продаётся' : `${G.FIN.fmtM(ask * 0.9)} – ${G.FIN.fmtM(ask * 1.1)}` })]),
+          el('div', null, [el('small', { text: 'Ваш трансферный бюджет' }), el('b', { text: G.FIN.fmtM(me.fin.transferBudget || 0) })]),
+          el('div', null, [el('small', { text: 'Попыток осталось' }), el('b', { text: n.tries })])
+        ]);
+        content.appendChild(info);
+        const state = { offer: Math.round(Math.min(me.fin.transferBudget || v, v) * 10) / 10 };
+        const val = el('b');
+        const max = Math.max(Math.round(v * 0.6 * 10) / 10 + 0.1, Math.round(Math.min(v * 2.2, me.fin.transferBudget || 0) * 10) / 10);
+        const slider = el('input', { type: 'range', min: Math.round(v * 0.4 * 10) / 10, max, step: 0.1, value: state.offer, oninput: (e) => { state.offer = +e.target.value; val.textContent = G.FIN.fmtM(state.offer); } });
+        val.textContent = G.FIN.fmtM(state.offer);
+        content.appendChild(el('div.renew-row', null, [el('span', { text: 'Предложение' }), slider, val]));
+        const msg = el('div.renew-hint');
+        content.appendChild(msg);
+        const btns = el('div.renew-btns');
+        btns.appendChild(el('button.btn.primary', { text: 'Отправить предложение клубу', onclick: () => {
+          const r = TR.bidClub(st, pid, state.offer);
+          LEAGUE.save(st);
+          if (r.status === 'accept') { stepTerms(r.msg); return; }
+          msg.textContent = r.msg;
+          if (r.status === 'counter') {
+            btns.querySelectorAll('.cnt').forEach(b => b.remove());
+            btns.appendChild(el('button.btn.cnt', { text: `Согласиться на ${G.FIN.fmtM(r.fee)}`, onclick: () => { const a = TR.acceptCounter(st, pid); LEAGUE.save(st); if (a && a.status === 'accept') stepTerms(a.msg); else msg.textContent = a ? a.msg : ''; } }));
+          }
+          info.lastChild.querySelector('b').textContent = TR.neg(st, pid).tries;
+        } }));
+        content.appendChild(btns);
+      };
+      const stepTerms = (lead) => {
+        content.innerHTML = '';
+        content.appendChild(head);
+        content.appendChild(el('div.tr-ok', { text: '✅ ' + lead }));
+        const t = TR.terms(st, p, seller, me);
+        content.appendChild(el('div.agent', null, t.notes.map(x => el('div', { text: '💬 ' + x }))));
+        if (t.refuse) { content.appendChild(el('div.renew-hint', { text: t.refuse })); return; }
+        const state = { wage: t.wage, years: Math.round((t.years[0] + t.years[1]) / 2) };
+        const info = el('div.renew-info');
+        const redraw = () => {
+          info.innerHTML = '';
+          info.append(
+            el('div', null, [el('small', { text: 'Сейчас получает' }), el('b', { text: G.FIN.fmtW(p.wage) })]),
+            el('div', null, [el('small', { text: 'Требование' }), el('b', { text: `${G.FIN.fmtW(t.wage)}, ${t.years[0]}–${t.years[1]} ${U.plural(t.years[1], 'год', 'года', 'лет')}` })]),
+            el('div' + (G.FIN.wageBill(me) + state.wage > me.fin.wageBudget ? '.neg' : ''), null, [el('small', { text: 'Ведомость после подписания' }), el('b', { text: `${G.FIN.wageBill(me) + state.wage} / ${me.fin.wageBudget} тыс./нед` })]),
+            el('div', null, [el('small', { text: 'Попыток осталось' }), el('b', { text: t.tries })])
+          );
+          wv.textContent = G.FIN.fmtW(state.wage);
+        };
+        const wv = el('b');
+        const slider = el('input', { type: 'range', min: Math.round(t.wage * 0.75), max: Math.round(t.wage * 1.4), step: 1, value: t.wage, oninput: (e) => { state.wage = +e.target.value; redraw(); } });
+        const yrs = el('div.seg');
+        [1, 2, 3, 4, 5].forEach(y => yrs.appendChild(el('button' + (y === state.years ? '.on' : ''), { text: y + ' ' + U.plural(y, 'год', 'года', 'лет'), onclick: (e) => { state.years = y; U.$$('button', yrs).forEach(b => b.classList.remove('on')); e.target.classList.add('on'); } })));
+        const msg = el('div.renew-hint');
+        content.append(info, el('div.renew-row', null, [el('span', { text: 'Зарплата' }), slider, wv]), el('div.renew-row', null, [el('span', { text: 'Срок' }), yrs]), msg,
+          el('div.renew-btns', null, [el('button.btn.primary', { text: 'Предложить контракт', onclick: () => {
+            const r = TR.offerTerms(st, pid, state.wage, state.years);
+            LEAGUE.save(st);
+            if (r.ok) { md.close(); UI.toast(r.msg); G.FX.confetti([me.c1, me.c2, '#00ff87'], 120); G.SFX.goal(); this.hub(this.tab); return; }
+            msg.textContent = r.msg; redraw();
+            if (r.final) content.querySelector('.renew-btns').remove();
+          } })]));
+        redraw();
+      };
+      if (n.fee) stepTerms(`Сумма с клубом согласована: ${G.FIN.fmtM(n.fee)}.`); else stepClub();
+      md = UI.modal({ title: 'Трансфер', content, buttons: [{ text: 'Закрыть', cls: 'ghost' }], onClose: () => { if (this.tab === 'transfers') this.hub('transfers'); } });
+    },
+
     /* ---------- Финансы ---------- */
     financeMini(c) {
       const st = this.st, f = c.fin;
@@ -632,7 +878,7 @@
       const bill = G.FIN.wageBill(club);
       const kpi = (label, val, sub, cls) => el('div.card.kpi' + (cls ? '.' + cls : ''), null, [el('small', { text: label }), el('b', { text: val }), sub ? el('span', { text: sub }) : null]);
       const s = f.season;
-      const income = s.tv + s.gate + s.comm + s.prize, expense = s.wages + s.ops;
+      const income = s.tv + s.gate + s.comm + s.prize + Math.max(0, s.transfers || 0), expense = s.wages + s.ops + Math.min(0, s.transfers || 0);
       const kpis = el('div.kpis', null, [
         kpi('Баланс клуба', G.FIN.fmtM(f.balance), `${income + expense >= 0 ? '+' : ''}${(income + expense).toFixed(1)} млн за сезон`, f.balance < 0 ? 'neg' : ''),
         kpi('Зарплатная ведомость', `£${bill} тыс./нед`, `бюджет £${f.wageBudget} тыс. · ${G.FIN.yearly(bill).toFixed(0)} млн/год`, bill > f.wageBudget ? 'neg' : ''),
@@ -643,7 +889,7 @@
       const grid = el('div.fin-grid');
       // доходы и расходы
       const led = el('div.card', null, [el('h3', { text: `Сезон ${st.seasonName}: доходы и расходы` })]);
-      const rows = [['Телеправа', s.tv, 'Равная доля каждый тур + премия за место в конце сезона'], ['Билеты', s.gate, 'Каждый домашний матч: вместимость × посещаемость × цена билета'], ['Спонсоры', s.comm, 'Зависят от статуса клуба'], ['Призовые', s.prize, 'В конце сезона: место в таблице и еврокубки (1–6 место)'], ['Зарплаты', s.wages, 'Каждый тур: ведомость × 52 недели / 38 туров'], ['Операционные', s.ops, 'Персонал, инфраструктура, поездки']];
+      const rows = [['Телеправа', s.tv, 'Равная доля каждый тур + премия за место в конце сезона'], ['Билеты', s.gate, 'Каждый домашний матч: вместимость × посещаемость × цена билета'], ['Спонсоры', s.comm, 'Зависят от статуса клуба'], ['Призовые', s.prize, 'В конце сезона: место в таблице и еврокубки (1–6 место)'], ['Зарплаты', s.wages, 'Каждый тур: ведомость × 52 недели / 38 туров'], ['Операционные', s.ops, 'Персонал, инфраструктура, поездки, штрафы игроков'], ['Трансферы', s.transfers || 0, 'Покупки (−) и продажи (+) игроков']];
       const maxAbs = Math.max(1, ...rows.map(r => Math.abs(r[1])));
       rows.forEach(([n, v, d]) => {
         const bar = el('div.led-bar', null, [el('i')]);
@@ -870,6 +1116,8 @@
         el('h4', { text: 'Финансы и контракты' }),
         el('p', { text: 'Клуб получает телеправа и спонсорские деньги каждый тур, выручку от билетов — за домашние матчи, призовые — в конце сезона (зависят от места, 1–6 места дают еврокубковые премии). Расходы — зарплаты и операционные траты. Стоимость игрока зависит от рейтинга, возраста, формы, оценок, особенностей и срока контракта. Продлевайте контракты в разделе «Финансы»: игрок называет требования, а совет директоров не даст выйти за бюджет зарплат. Непродлённые игроки летом уходят бесплатно. Совет следит за местом относительно цели и за финансами.' }),
         el('p', { text: 'У каждого игрока есть скрытый характер — амбиции, преданность, профессионализм и темперамент. Цифр не видно, но их выдают реплики агента в переговорах и мнение тренерского штаба в карточке. Амбициозные просят больше и упорнее торгуются, а если переросли клуб — хотят уйти; преданные идут на уступки; профессионалы лучше прогрессируют и быстрее восстанавливаются; вспыльчивые жалуются в прессе на скамейку. Настроение игрока зависит от игрового времени и результатов и влияет на переговоры.' }),
+        el('h4', { text: 'Трансферы' }),
+        el('p', { text: 'Летнее окно открыто перед сезоном и до 3-го тура, зимнее — с 19-го по 21-й тур. Покупка идёт в два шага: сначала договоритесь с клубом о сумме (он может принять, назвать свою цену или отказать; ключевые игроки топ-клубов не продаются), затем — с игроком о зарплате и сроке: амбициозные просят больше и не хотят в клуб скромнее, преданные не хотят уходить из своего. Трансферный бюджет выделяет совет директоров, 70% от продаж возвращается в него. Выставляйте игроков на трансфер — клубы будут присылать предложения; недовольные игроки сами просят о трансфере. Клубы-ИИ торгуют и между собой: закрывают слабые позиции и ищут игроков под идею тренера.' }),
         el('h4', { text: 'Особенности игроков' }),
         el('p', null, [`У игроков есть особенности (всего ${Object.keys(G.TRAITS.LIST).length}): «Спорит с судьями», «Бьёт при первой возможности», «Передерживает мяч», «Решает в концовке», «Хрупкий» и другие. Они срабатывают, пока игрок на поле, и меняют силу блоков, удары, фолы, карточки, усталость и травмы. Значки видны в составе и на схеме — наведите на значок, чтобы прочитать эффект. `, el('button.btn.ghost.small', { text: 'Все особенности', onclick: () => UI.traitsGuide() })]),
         el('p', { text: 'Тренеры-ИИ выбирают схему и план исходя из своих предпочтений, состава и силы соперника, а по ходу матча реагируют на счёт, усталость и удаления. В перерыве, на 60-й и 75-й минутах тренер разбирает игру: если команду душат прессингом, техничный состав переходит на «Владение», а слабый технически — на «Прямой футбол»; против низкого блока идёт через фланги или бьёт издали, против высокой линии — на рывки за спину; опускает линию против быстрых нападающих, снижает прессинг при усталости и карточках, добавляет полузащитника, если проигрывает центр.'})

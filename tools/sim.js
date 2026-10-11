@@ -2,7 +2,7 @@
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const ctx = { console, Math, Date, JSON, setTimeout };
 ctx.globalThis = ctx; vm.createContext(ctx);
-for (const f of ['util', 'traits', 'data', 'tactics', 'finance', 'board', 'engine', 'ai', 'league'])
+for (const f of ['util', 'traits', 'data', 'tactics', 'finance', 'transfers', 'board', 'engine', 'ai', 'league'])
   if (fs.existsSync(path.join(__dirname, '../js', f + '.js'))) vm.runInContext(fs.readFileSync(path.join(__dirname, '../js', f + '.js'), 'utf8'), ctx, { filename: f });
 const { DATA, TAC, AI, ENGINE } = ctx;
 const N = +process.argv[2] || 100;

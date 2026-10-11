@@ -1,7 +1,7 @@
 // Симуляция целого сезона: node tools/season.js
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const ctx = { console, Math, Date, JSON, setTimeout }; ctx.globalThis = ctx; vm.createContext(ctx);
-for (const f of ['util', 'traits', 'data', 'tactics', 'finance', 'board', 'engine', 'ai', 'league'])
+for (const f of ['util', 'traits', 'data', 'tactics', 'finance', 'transfers', 'board', 'engine', 'ai', 'league'])
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../js', f + '.js'), 'utf8'), ctx, { filename: f });
 const { LEAGUE, AI, ENGINE, TAC } = ctx;
 const st = LEAGUE.newGame({ mode: 'spectator', seed: 7 });

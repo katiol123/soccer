@@ -158,6 +158,7 @@
       ]);
       const ml = G.FIN.moodLabel(p.mood == null ? 60 : p.mood);
       fr.appendChild(el('div', null, [el('small', { text: 'Настроение' }), el('b', { text: `${ml[1]} ${ml[0]}` })]));
+      if (UI.buyHook && UI.buyHook.can(p, club)) fr.appendChild(el('button.btn.small.primary', { text: '💰 Сделать предложение', onclick: () => { md.close(); UI.buyHook.open(p); } }));
       if (UI.renewHook && UI.renewHook.can(p, club)) fr.appendChild(el('button.btn.small.primary', { text: '✍ Продлить контракт', onclick: () => { md.close(); UI.renewHook.open(p, club); } }));
       content.appendChild(fr);
       if (UI.renewHook && UI.renewHook.own && UI.renewHook.own(club)) {

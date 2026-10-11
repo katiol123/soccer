@@ -120,6 +120,7 @@
     }));
     G.FIN.round(st);
     st.round++;
+    if (G.TR) G.TR.afterRound(st);
     if (st.userClub) fixUserTactics(st);
   }
 
@@ -178,6 +179,7 @@
     if (up.length) st.news.push({ r: 0, text: '📈 Прогресс за межсезонье: ' + up.map(x => `${x.p.name} (+${x.d.total}${x.d.avg ? ', ср. ' + x.d.avg.toFixed(2) : ''})`).join(', ') + '.' });
     if (down.length) st.news.push({ r: 0, text: '📉 Сдали: ' + down.map(x => `${x.p.name} (${x.d.total}${x.d.avg ? ', ср. ' + x.d.avg.toFixed(2) : ''})`).join(', ') + '.' });
     G.FIN.seasonStart(st);
+    if (G.TR) { const m = G.TR.market(st); m.neg = {}; m.offers = []; G.TR.afterRound(st); }
     if (st.userClub) fixUserTactics(st);
   }
 

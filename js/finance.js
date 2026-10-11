@@ -121,7 +121,7 @@
   function commercial(club) { return 12 * Math.exp(0.65 * (club.str - 10)); }      // млн/сезон
   function operating(club) { return 30 + (club.str - 10) * 15; }                   // млн/сезон
 
-  function emptyLedger() { return { tv: 0, gate: 0, comm: 0, prize: 0, wages: 0, ops: 0 }; }
+  function emptyLedger() { return { tv: 0, gate: 0, comm: 0, prize: 0, wages: 0, ops: 0, transfers: 0 }; }
 
   /* Прогноз доходов на сезон (для бюджета зарплат) */
   function projectedIncome(club, expectedPos) {
@@ -158,6 +158,8 @@
       }
       c.fin.target = exp[c.id];
       setBudget(st, c, exp[c.id]);
+      if (c.fin.transferBudget == null) c.fin.transferBudget = Math.round(Math.max(0, c.fin.balance * 0.5));
+      if (c.fin.season.transfers == null) c.fin.season.transfers = 0;
     });
     if (st.userClub && !st.board) st.board = { conf: 60, target: exp[st.userClub] };
   }
@@ -226,7 +228,7 @@
       if (!c || !c.fin) return;
       book(c, 'prize', TV_MERIT * (20 - i) + (EURO[i] || 0));
       const s = c.fin.season;
-      c.fin.last = Object.assign({}, s, { season: st.seasonName, profit: Math.round((s.tv + s.gate + s.comm + s.prize + s.wages + s.ops) * 10) / 10, pos: i + 1 });
+      c.fin.last = Object.assign({}, s, { season: st.seasonName, profit: Math.round((s.tv + s.gate + s.comm + s.prize + s.wages + s.ops + (s.transfers || 0)) * 10) / 10, pos: i + 1 });
       c.fin.season = emptyLedger();
     });
     // совет директоров подводит итоги
@@ -274,7 +276,7 @@
   /* Новый сезон: бюджеты по ожидаемому месту, новая цель правления */
   function seasonStart(st) {
     const exp = expectedPositions(st);
-    st.clubs.forEach(c => { c.fin.target = exp[c.id]; setBudget(st, c, exp[c.id]); });
+    st.clubs.forEach(c => { c.fin.target = exp[c.id]; setBudget(st, c, exp[c.id]); c.fin.transferBudget = Math.round(Math.max(0, c.fin.balance * 0.5)); });
     if (st.userClub) { st.board.target = exp[st.userClub]; st.board.warned = false; }
   }
 
