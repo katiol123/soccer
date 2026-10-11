@@ -167,37 +167,151 @@
         }
       }
     }
-    // тактические изменения по счёту
+    // диагностика игры (60' и 75') и реакция на счёт
     const stage = min >= 85 ? 3 : min >= 75 ? 2 : min >= 60 ? 1 : 0;
     if (stage && !m.done['s' + stage]) {
       m.done['s' + stage] = true;
-      const react = c.temper * 0.6 + c.adapt * 0.6;
-      if (diff < 0 && U.rnd() < react + 0.2) {
-        if (ts.tac.mentality < 2) { match.setTactic(side, 'mentality', ts.tac.mentality + 1); coachSay(match, side, 'Проигрываем — вперёд! Менталитет атакующий.'); }
-        if (stage >= 2 && c.adapt > 0.35 && ts.tac.plan !== 'direct' && ts.tac.plan !== 'wings') {
-          const np = ts.club.players && xiProfile(ts.club, ts.tac.formation, ts.onPitch.filter(x => x.p).map(x => x.p.id)).dri > 11 ? 'wings' : 'direct';
-          match.setTactic(side, 'plan', np);
-          coachSay(match, side, `Меняем план на «${TAC.PLANS[np].n}».`);
-        }
-        if (stage >= 2 && c.adapt > 0.5 && ATTACK_SHIFT[ts.tac.formation] !== ts.tac.formation && ts.redCount === 0) {
-          const nf = ATTACK_SHIFT[ts.tac.formation];
-          match.setFormation(side, nf);
-          coachSay(match, side, `Перестройка на ${nf} — больше людей в атаке.`);
-        }
-        if (stage === 3 && ts.tac.pressing < 2) { match.setTactic(side, 'pressing', 2); coachSay(match, side, 'Прессинг на максимум!'); }
-      } else if (diff > 0 && U.rnd() < react + (diff === 1 ? 0.15 : -0.1)) {
-        if (stage >= 2 && ts.tac.mentality > 0 && ts.coach.mentality < 1.7) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, 'Удерживаем счёт, без лишнего риска.'); }
-        if (stage === 3 && diff === 1 && c.adapt > 0.5) {
-          const nf = DEFENSE_SHIFT[ts.tac.formation];
-          if (nf !== ts.tac.formation) { match.setFormation(side, nf); }
-          match.setTactic(side, 'plan', 'park');
-          coachSay(match, side, `Ставим автобус: ${ts.tac.formation}, все назад!`);
-        }
-      } else if (diff === 0 && stage >= 2) {
-        const myR = TAC.teamRating(ts.club), oR = TAC.teamRating(match.t[match.other(side)].club);
-        if (myR > oR + 0.5 && ts.tac.mentality < 2 && U.rnd() < react) { match.setTactic(side, 'mentality', 2); coachSay(match, side, 'Ничья нас не устраивает — атакуем!'); }
-        else if (myR < oR - 1 && ts.tac.mentality > 0 && U.rnd() < react) { match.setTactic(side, 'mentality', 0); coachSay(match, side, 'Очко против фаворита — тоже результат.'); }
+      if (stage <= 2) diagnose(match, side, false);
+      scoreReaction(match, side, stage);
+    }
+  }
+
+  /* ---------- диагностика: что идёт не так и чем лечить ---------- */
+  const MIDFIELD_SHIFT = { '4-4-2': '4-1-4-1', '4-3-3': '4-2-3-1', '3-4-3': '3-5-2', '5-3-2': '5-4-1', '4-2-3-1': '4-1-4-1', '3-5-2': '3-5-2', '4-1-4-1': '4-1-4-1', '5-4-1': '5-4-1' };
+
+  /* Профиль игроков, которые сейчас на поле (с учётом формы, особенностей и усталости) */
+  function liveProfile(match, side) {
+    const ps = match.t[side].onPitch.filter(x => x.p && x.slot.role !== 'GK');
+    const a = k => ps.length ? U.avg(ps, x => match.pa(x.p, k) * match.fatF(x.p)) : 8;
+    const line = (pos, k) => { const l = ps.filter(x => x.p.pos === pos); return l.length ? U.avg(l, x => match.pa(x.p, k) * match.fatF(x.p)) : a(k); };
+    const pr = { pas: a('pas'), dri: a('dri'), pac: a('pac'), sho: a('sho'), pos: a('pos'), tac: a('tac'), sta: a('sta'), com: a('com'), dfPac: line('DF', 'pac'), fwPac: line('FW', 'pac') };
+    pr.tech = (pr.pas + pr.dri) / 2;          // техника: умение держать мяч под давлением
+    pr.cross = (pr.dri + pr.pos) / 2;         // фланги и игра на втором этаже
+    pr.fit = U.avg(ps, x => x.p.m.fit);
+    pr.aerial = ps.filter(x => G.TRAITS.has(x.p, 'aerial') || G.TRAITS.has(x.p, 'crosser')).length;
+    pr.long = ps.filter(x => G.TRAITS.has(x.p, 'longShots') || G.TRAITS.has(x.p, 'shooter')).length;
+    return pr;
+  }
+
+  function setPlan(match, side, plan, text) {
+    const ts = match.t[side];
+    if (ts.tac.plan === plan) return false;
+    match.setTactic(side, 'plan', plan);
+    coachSay(match, side, text + ` (план «${TAC.PLANS[plan].n}»)`);
+    return true;
+  }
+
+  /* Как ломать оборону, когда нужен гол */
+  function chasePlan(me, opp, oppTs) {
+    const lowBlock = oppTs.tac.plan === 'park' || oppTs.tac.line === 0 || oppTs.shield > 45;
+    if (lowBlock) {
+      if (me.cross >= 12 || me.aerial >= 1) return ['wings', 'Соперник встал низким блоком — идём через фланги и навесы'];
+      if (me.long >= 1 || me.sho >= 13) return ['direct', 'Соперник закрылся — бьём при каждой возможности, в том числе издали'];
+      return ['direct', 'Соперник закрылся — меньше касаний, больше ударов'];
+    }
+    if (oppTs.tac.line === 2 && me.fwPac >= 13.5) return ['counter', 'У соперника высокая линия — ловим на рывках за спину'];
+    if (me.tech >= 13.5) return ['possession', 'Забираем мяч и методично давим'];
+    return ['direct', 'Без изысков: быстрее к чужим воротам'];
+  }
+
+  /* Как удержать счёт */
+  function holdPlan(me) {
+    if (me.tech >= 13.5) return ['possession', 'Держим мяч и усыпляем игру — без мяча соперник не забьёт'];
+    return ['park', 'Все назад, держим счёт'];
+  }
+
+  /* Разбор игры: в перерыве и по ходу матча. Чем гибче тренер, тем вероятнее он что-то меняет */
+  function diagnose(match, side, isHalf) {
+    const ts = match.t[side], os = match.other(side), opp = match.t[os], c = ts.coach;
+    const me = liveProfile(match, side), them = liveProfile(match, os);
+    const diff = match.score[side] - match.score[os];
+    const possShare = ts.st.poss / Math.max(1, ts.st.poss + opp.st.poss);
+    const minK = Math.max(0.5, match.minute() / 45); // нормировка на сыгранное время
+    let changes = 0;
+    const act = (chance) => changes < 2 && U.rnd() < chance;
+
+    // 1. Нас душат прессингом (соперник часто отбирает мяч)
+    if (opp.st.wins >= ts.st.wins + 2 && act(c.adapt + 0.15)) {
+      if (me.tech >= 13 && me.tech >= them.tac) {
+        if (setPlan(match, side, 'possession', `Нас прессингуют, но у нас техничные ребята (техника ${me.tech.toFixed(1)}) — держим мяч и выходим из-под давления`)) changes++;
+      } else if (setPlan(match, side, 'direct', `Нас душат прессингом, а с техникой (${me.tech.toFixed(1)}) не перепасовать — играем проще, через верх`)) changes++;
+      else if (ts.tac.mentality > 0 && diff >= 0) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, 'Прямой футбол не спасает от прессинга — отходим ниже и бьём на контратаку.'); changes++; }
+    }
+    // 2. Владеем, но не создаём (стерильное владение)
+    if (possShare >= 0.56 && ts.st.xg < 0.35 * minK && diff <= 0 && act(c.adapt)) {
+      const [plan, why] = chasePlan(me, them, opp);
+      if (setPlan(match, side, plan, `Мяч у нас, а моментов нет. ${why}`)) changes++;
+    }
+    // 3. Нас переигрывают в центре (мало владения), а мы не играем от обороны
+    if (possShare <= 0.4 && !['park', 'counter'].includes(ts.tac.plan) && act(c.adapt * 0.8)) {
+      const nf = MIDFIELD_SHIFT[ts.tac.formation];
+      if (nf !== ts.tac.formation && ts.redCount === 0) { match.setFormation(side, nf); coachSay(match, side, `Проигрываем центр поля — ещё один полузащитник, схема ${nf}.`); changes++; }
+      else if (me.pac >= them.pac && setPlan(match, side, 'counter', 'Мяча у нас мало — отдаём его и бьём на контратаках')) changes++;
+    }
+    // 4. Соперник создаёт слишком много
+    if (opp.st.xg > ts.st.xg + 0.5 * minK && act(c.adapt + 0.1)) {
+      if (ts.tac.line >= 1 && them.fwPac > me.dfPac + 1) { match.setTactic(side, 'line', ts.tac.line - 1); coachSay(match, side, `Их быстрые нападающие убегают за спину — опускаем линию обороны.`); changes++; }
+      else if (diff >= 0 && ts.tac.mentality > 0) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, 'Слишком много отдаём сопернику — чуть осторожнее.'); changes++; }
+      else if (ts.tac.pressing < 2 && them.tech < 13) { match.setTactic(side, 'pressing', ts.tac.pressing + 1); coachSay(match, side, 'Они слабы технически — давим выше и не даём им строить атаки.'); changes++; }
+    }
+    // 5. Попадаемся в офсайд
+    if (ts.st.offsides >= 3 && ts.tac.plan === 'counter' && act(c.adapt)) {
+      if (setPlan(match, side, me.tech >= 13 ? 'possession' : 'wings', 'Постоянно в офсайде — хватит забеганий, строим атаки иначе')) changes++;
+    }
+    // 6. Устали
+    if (me.fit < 62 && ts.tac.pressing === 2 && act(0.4 + c.adapt * 0.5)) {
+      match.setTactic(side, 'pressing', 1);
+      if (ts.tac.plan === 'gegenpress') ts.tac.plan = me.tech >= 13.5 ? 'possession' : 'counter';
+      coachSay(match, side, `Ноги уже не те (свежесть ${Math.round(me.fit)}%) — снижаем прессинг, бережём силы.`); changes++;
+    }
+    // 7. Много карточек
+    if (ts.st.yc >= 3 && ts.tac.pressing >= 1 && act(c.adapt)) {
+      match.setTactic(side, 'pressing', ts.tac.pressing - 1);
+      coachSay(match, side, `${ts.st.yc} жёлтых — аккуратнее в отборе, иначе останемся вдесятером.`); changes++;
+    }
+    // 8. В перерыве при крупном проигрыше — смелее
+    if (isHalf && diff <= -2 && c.adapt > 0.3) {
+      const nf = ATTACK_SHIFT[ts.tac.formation];
+      if (nf !== ts.tac.formation && ts.redCount === 0) { match.setFormation(side, nf); coachSay(match, side, `В перерыве: переходим на ${nf}.`); }
+      if (ts.tac.mentality < 2) { ts.tac.mentality = 2; coachSay(match, side, 'Терять нечего — все вперёд!'); }
+    } else if (isHalf && diff < 0 && changes === 0 && ts.tac.mentality < 2 && U.rnd() < c.adapt) {
+      ts.tac.mentality++; coachSay(match, side, 'Во втором тайме добавляем в атаке.');
+    }
+    return changes;
+  }
+
+  /* Реакция на счёт в концовке */
+  function scoreReaction(match, side, stage) {
+    const ts = match.t[side], c = ts.coach, os = match.other(side);
+    const diff = match.score[side] - match.score[os];
+    const react = c.temper * 0.6 + c.adapt * 0.6;
+    const me = liveProfile(match, side), them = liveProfile(match, os);
+    if (diff < 0 && U.rnd() < react + 0.2) {
+      if (ts.tac.mentality < 2) { match.setTactic(side, 'mentality', ts.tac.mentality + 1); coachSay(match, side, 'Проигрываем — вперёд! Менталитет атакующий.'); }
+      if (stage >= 2 && c.adapt > 0.35) {
+        const [plan, why] = chasePlan(me, them, match.t[os]);
+        setPlan(match, side, plan, why);
       }
+      if (stage >= 2 && c.adapt > 0.5 && ATTACK_SHIFT[ts.tac.formation] !== ts.tac.formation && ts.redCount === 0) {
+        const nf = ATTACK_SHIFT[ts.tac.formation];
+        match.setFormation(side, nf);
+        coachSay(match, side, `Перестройка на ${nf} — больше людей в атаке.`);
+      }
+      if (stage === 3 && ts.tac.pressing < 2 && me.fit > 45) { match.setTactic(side, 'pressing', 2); coachSay(match, side, 'Прессинг на максимум!'); }
+    } else if (diff > 0 && U.rnd() < react + (diff === 1 ? 0.15 : -0.1)) {
+      if (stage >= 2 && ts.tac.mentality > 0 && c.mentality < 1.7) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, 'Удерживаем счёт, без лишнего риска.'); }
+      if (stage === 3 && diff === 1 && c.adapt > 0.5) {
+        const [plan, why] = holdPlan(me);
+        if (plan === 'park') {
+          const nf = DEFENSE_SHIFT[ts.tac.formation];
+          if (nf !== ts.tac.formation) match.setFormation(side, nf);
+          setPlan(match, side, 'park', `${why}: ${ts.tac.formation}`);
+        } else setPlan(match, side, plan, why);
+      }
+    } else if (diff === 0 && stage >= 2) {
+      const myR = TAC.teamRating(ts.club), oR = TAC.teamRating(match.t[os].club);
+      if (myR > oR + 0.5 && ts.tac.mentality < 2 && U.rnd() < react) { match.setTactic(side, 'mentality', 2); coachSay(match, side, 'Ничья нас не устраивает — атакуем!'); }
+      else if (myR < oR - 1 && ts.tac.mentality > 0 && U.rnd() < react) { match.setTactic(side, 'mentality', 0); coachSay(match, side, 'Очко против фаворита — тоже результат.'); }
     }
   }
 
@@ -205,19 +319,7 @@
     const ts = match.t[side];
     if (ts.ctrl !== 'ai') return;
     const c = ts.coach;
-    const diff = match.score[side] - match.score[match.other(side)];
-    const opp = match.t[match.other(side)];
-    if (diff <= -2 && c.adapt > 0.3) {
-      const nf = ATTACK_SHIFT[ts.tac.formation];
-      if (nf !== ts.tac.formation && ts.redCount === 0) { match.setFormation(side, nf); coachSay(match, side, `В перерыве: переходим на ${nf}.`); }
-      ts.tac.mentality = 2;
-    } else if (diff < 0 && U.rnd() < c.adapt) {
-      // анализ: где соперник нас обыгрывает
-      if (opp.st.wins > ts.st.wins + 2 && ts.tac.plan !== 'direct') { ts.tac.plan = 'direct'; coachSay(match, side, 'Нас душат прессингом — играем проще, прямыми передачами.'); }
-      else if (ts.tac.mentality < 2) { ts.tac.mentality++; coachSay(match, side, 'Во втором тайме добавляем в атаке.'); }
-    } else if (diff > 0 && opp.st.xg > ts.st.xg + 0.6 && ts.tac.line > 0) {
-      ts.tac.line--; coachSay(match, side, 'Ведём, но соперник создаёт много — опускаем линию.');
-    }
+    diagnose(match, side, true);
     // уставшие и предупреждённые
     const tired = ts.onPitch.filter(x => x.p && x.slot.role !== 'GK' && (x.p.m.fit < 66 || (x.p.m.yc && c.adapt > 0.7))).slice(0, 2);
     for (const x of tired) {
@@ -336,5 +438,5 @@
     return r < 0.1 ? 1 : (U.rnd() < 0.5 ? 0 : 2);
   }
 
-  G.AI = { prepare, matchStart, think, halftime, onGoal, onRedCard, handleInjury, chooseMove, gemWeights, penaltyKick, penaltyDive, xiProfile };
+  G.AI = { liveProfile, diagnose, prepare, matchStart, think, halftime, onGoal, onRedCard, handleInjury, chooseMove, gemWeights, penaltyKick, penaltyDive, xiProfile };
 })(typeof window !== 'undefined' ? window : globalThis);
