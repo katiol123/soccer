@@ -17,10 +17,11 @@
 
   /* ---------- окна ---------- */
   function windowState(st) {
-    const r = st.round; // индекс следующего тура (0 = перед 1-м туром)
-    if (r <= 2) return { open: true, id: st.season + 's', name: 'Летнее окно', closes: 3, text: `открыто до ${3}-го тура` };
-    if (r >= 18 && r <= 20) return { open: true, id: st.season + 'w', name: 'Зимнее окно', closes: 21, text: 'открыто до 21-го тура' };
-    return { open: false, id: null, name: r < 18 ? 'Зимнее окно' : 'Летнее окно', opens: r < 18 ? 19 : null, text: r < 18 ? 'откроется перед 19-м туром' : 'откроется летом' };
+    const r = st.round; // индекс следующей недели календаря (0 = перед стартом сезона)
+    const K = G.LEAGUE.cal(st), wk = n => `${n}-й недели`;
+    if (r <= K.summerEnd) return { open: true, id: st.season + 's', name: 'Летнее окно', closes: K.summerEnd + 1, text: `закроется после ${wk(K.summerEnd + 1)}` };
+    if (r >= K.winter[0] && r <= K.winter[1]) return { open: true, id: st.season + 'w', name: 'Зимнее окно', closes: K.winter[1] + 1, text: `закроется после ${wk(K.winter[1] + 1)}` };
+    return { open: false, id: null, name: r < K.winter[0] ? 'Зимнее окно' : 'Летнее окно', opens: r < K.winter[0] ? K.winter[0] + 1 : null, text: r < K.winter[0] ? `откроется перед ${K.winter[0] + 1}-й неделей` : 'откроется летом' };
   }
 
   /* ---------- статус игрока в клубе ---------- */
@@ -57,7 +58,7 @@
   function notForSale(st, seller, p) {
     if (p.loan) return `Игрок в аренде (принадлежит «${(st.clubs.find(c => c.id === p.loan.from) || {}).name}»).`;
     if (posCount(seller, p.pos) <= MIN_POS[p.pos]) return 'Клубу некем заменить игрока на этой позиции.';
-    if (status(seller, p) === 'key' && (seller.fin.target || 10) <= 6 && !aiListed(seller, p)) return 'Ключевой игрок клуба — не продаётся.';
+    if (status(seller, p) === 'key' && FIN().level(seller) <= 6 && !aiListed(seller, p)) return 'Ключевой игрок клуба — не продаётся.';
     return null;
   }
 
@@ -107,7 +108,7 @@
     if (n.terms) return n.terms;
     const h = p.h || { amb: 10, loy: 10, pro: 10, tem: 10 };
     const mood = p.mood == null ? 60 : p.mood;
-    const fromT = (from.fin && from.fin.target) || 10, toT = (to.fin && to.fin.target) || 10;
+    const fromT = FIN().level(from), toT = FIN().level(to);
     const step = fromT - toT; // >0 — переход в клуб уровнем выше
     let w = FIN().fairWage(p) * (1 + (h.amb - 10) * 0.025) * (0.97 + U.rnd() * 0.1);
     w *= Math.max(1, p.wage / FIN().fairWage(p)) > 1.1 ? 1.08 : 1;               // не хочет терять в деньгах
@@ -288,7 +289,7 @@
       const budget = buyer.fin.transferBudget || 0;
       if (budget < 2) continue;
       const coach = buyer.coach, attrs = PLAN_ATTR[coach.plan] || [];
-      const bT = buyer.fin.target || 10;
+      const bT = FIN().level(buyer);
       let need = null, cands = [];
       for (const nd of needs(buyer).slice(0, 2)) {
         if (nd.gap < 0.6 && !nd.lack) continue;
@@ -302,11 +303,11 @@
             if (notForSale(st, seller, p)) continue;
             // топ-клубы не отдают конкурентам игроков основы
             const sst = status(seller, p);
-            if (sst === 'key' || (sst === 'starter' && (seller.fin.target || 10) <= 6)) continue;
+            if (sst === 'key' || (sst === 'starter' && FIN().level(seller) <= 6)) continue;
             const fee = asking(st, seller, p);
             if (fee > budget) continue;
             // игрок согласится?
-            const h = p.h || {}, sT = seller.fin.target || 10;
+            const h = p.h || {}, sT = FIN().level(seller);
             if (h.loy >= 16 && (p.mood || 60) >= 55) continue;
             if (h.amb >= 15 && bT - sT >= 6) continue;
             const fit = attrs.length ? U.avg(attrs, k => p.a[k]) - 10 : 0;
@@ -381,6 +382,7 @@
         if (f.minOvr && ovr < f.minOvr) continue;
         if (f.maxPrice && v > f.maxPrice) continue;
         if (f.trait && !(p.tr || []).includes(f.trait)) continue;
+        if (f.lg && c.league !== f.lg) continue;
         if (f.q && !p.name.toLowerCase().includes(f.q.toLowerCase())) continue;
         const nfs = !!notForSale(st, c, p);
         if (f.listedOnly && nfs) continue;
@@ -413,7 +415,7 @@
   /* Игровое время в аренде: сколько матчей сыграно из возможных */
   function loanMinutes(st, p) {
     const played = Math.max(0, (p.st.apps || 0) - (p.loan.apps0 || 0));
-    const possible = Math.max(1, st.round - (p.loan.round0 || 0));
+    const possible = Math.max(1, G.LEAGUE.clubMatches(st, p.loan.to, p.loan.round0 || 0, st.round));
     return { played, possible, share: played / possible };
   }
 
@@ -506,7 +508,7 @@
     if (s === 'key' || (s === 'starter' && !young)) return { error: `«${owner.name}» не отдаёт в аренду игроков основы.` };
     if (posCount(owner, p.pos) <= MIN_POS[p.pos]) return { error: `«${owner.name}» некем заменить игрока.` };
     if (p.contract <= 1 && !young) return { error: 'У игрока истекает контракт — клуб не видит смысла в аренде.' };
-    const ownerTop = (owner.fin.target || 10) <= 8;
+    const ownerTop = FIN().level(owner) <= 8;
     const promise = young && ownerTop ? 'start' : young ? 'rot' : 'none';
     let share = U.clamp(0.5 + (young ? 0.15 : 0) + (ownerTop ? 0.15 : 0) + (s === 'surplus' ? -0.2 : 0), 0.3, 1);
     const fee = Math.round(FIN().value(p) * (young && ownerTop ? 0.06 : 0.03) * 10) / 10;
@@ -531,7 +533,7 @@
     const m = market(st); m.ail = m.ail || {};
     const deals = [];
     for (const owner of st.clubs) {
-      if (owner.id === st.userClub || (owner.fin.target || 10) > 10) continue;
+      if (owner.id === st.userClub || FIN().level(owner) > 10) continue;
       const kids = owner.players.filter(p => !p.loan && p.age <= 22 && ['surplus', 'rotation'].includes(status(owner, p)) && posCount(owner, p.pos) > MIN_POS[p.pos] + 1 && p.moved !== w.id);
       for (const p of kids) {
         if (U.rnd() > 0.25 || (m.ail[owner.id + w.id] || 0) >= 2) continue;
@@ -553,7 +555,7 @@
 
   /* Зимняя проверка обещаний: если арендатор-пользователь не даёт играть — владелец отзывает игрока */
   function checkPromises(st) {
-    if (st.round !== 18 || !st.userClub) return;
+    if (st.round !== G.LEAGUE.cal(st).winter[0] || !st.userClub) return;
     const me = club(st, st.userClub);
     loansIn(me).forEach(p => {
       const L = p.loan, need = PROMISE[L.promise].k;

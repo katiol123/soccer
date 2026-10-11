@@ -82,7 +82,7 @@
   function release(st, c, p, why) {
     c.players = c.players.filter(x => x !== p); delete c._map;
     p.club = null; p.loan = null; p.contract = 0; p.treq = false; p.retiring = false;
-    p.faSince = st.season * 40 + st.round;
+    p.faSince = st.season * 100 + st.round;
     pool(st).push(p);
     if (TR()) { const m = TR().market(st); m.listed = m.listed.filter(id => id !== p.id); m.offers = m.offers.filter(o => o.pid !== p.id); m.history.push({ season: st.seasonName, round: st.round + 1, pid: p.id, name: p.name, from: c.id, to: null, fee: 0, why }); }
   }
@@ -103,7 +103,7 @@
   /* Требования свободного агента: чем дольше без клуба, тем скромнее */
   function faDemand(st, p) {
     const h = p.h || { amb: 10 };
-    const idle = Math.max(0, st.season * 40 + st.round - (p.faSince || 0));
+    const idle = Math.max(0, st.season * 100 + st.round - (p.faSince || 0));
     const w = FIN().fairWage(p) * (1 + (h.amb - 10) * 0.02) * Math.max(0.6, 1 - idle * 0.015);
     const years = p.age <= 23 ? [2, 4] : p.age <= 30 ? [1, 3] : [1, 2];
     return { wage: Math.round(w), years, idle };
@@ -116,7 +116,7 @@
       if (c.players.length >= TR().MAX_SQUAD) return { ok: false, msg: `В составе уже ${TR().MAX_SQUAD} игроков.` };
       if (FIN().wageBill(c) + wage > c.fin.wageBudget) return { ok: false, msg: 'Совет не одобрит: превышен бюджет зарплат.' };
       const h = p.h || { amb: 10 };
-      if (h.amb >= 16 && TAC.overall(p) >= 16 && (c.fin.target || 10) >= 14 && d.idle < 10) return { ok: false, msg: `${p.name} ждёт предложений от клубов посильнее.` };
+      if (h.amb >= 16 && TAC.overall(p) >= 16 && FIN().level(c) >= 14 && d.idle < 10) return { ok: false, msg: `${p.name} ждёт предложений от клубов посильнее.` };
       p.faTries = (p.faTries == null ? 2 : p.faTries);
       if (wage < d.wage * 0.95) {
         p.faTries--;
@@ -224,29 +224,28 @@
     return { id: 'c_' + c.id + '_' + Math.floor(Math.random() * 1e6), name, nat: U.pick(NATS), formations: [f1, f2], plan, mentality: r(), pressing: plan === 'gegenpress' ? 1.8 : r(), line: r(), adapt: Math.round(U.rand(0.2, 0.9) * 100) / 100, skill: Math.round(U.rand(0.72, 0.9) * 100) / 100, temper: Math.round(U.rand(0.3, 0.8) * 100) / 100, subAt: U.randInt(58, 67), motto: MOTTOS[plan], hired: true };
   }
 
-  /* ИИ-клубы увольняют неудачливых тренеров (туры 12, 20, 28) */
+  /* ИИ-клубы увольняют неудачливых тренеров (≈1/3, 1/2 и 3/4 сезона, в каждой лиге) */
   function aiSackings(st) {
-    if (![12, 20, 28].includes(st.round)) return;
-    const table = G.LEAGUE.standings(st);
+    if (!G.LEAGUE.cal(st).sacks.includes(st.round)) return;
     st.sacks = st.sacks || {};
-    table.forEach((r, i) => {
+    G.LEAGUE.leagueIds(st).forEach(lid => G.LEAGUE.standings(st, lid).forEach((r, i, table) => {
       const c = club(st, r.id);
       if (c.id === st.userClub || st.sacks[c.id + '@' + st.season]) return;
-      const gap = (i + 1) - (c.fin.target || 10);
+      const gap = ((i + 1) - (c.fin.target || 10)) * 20 / table.length;
       if (gap < 5) return;
       if (U.rnd() > 0.2 + (gap - 5) * 0.12) return;
       const old = c.coach;
       c.coach = genCoach(c);
       st.sacks[c.id + '@' + st.season] = st.round;
       st.news.push({ r: st.round, text: `🔥 «${c.name}» увольняет ${old.name} (${i + 1}-е место при цели ${c.fin.target}-е). Новый главный тренер — ${c.coach.name} (${c.coach.nat}): ${c.coach.formations[0]}, «${TAC.PLANS[c.coach.plan].n}».` });
-    });
+    }));
   }
 
   /* Увольнение пользователя */
   function checkUser(st, seasonEnd) {
     if (!st.userClub || !st.board || st.sacked) return;
     const b = st.board;
-    if ((seasonEnd && b.conf < 20) || (!seasonEnd && st.round >= 8 && b.conf < 12)) {
+    if ((seasonEnd && b.conf < 20) || (!seasonEnd && st.round >= G.LEAGUE.cal(st).boardMin && b.conf < 12)) {
       const c = club(st, st.userClub);
       st.sacked = { club: c.id, season: st.season, round: st.round, conf: Math.round(b.conf) };
       st.news.push({ r: st.round, text: `⛔ Совет директоров «${c.name}» расторг контракт с главным тренером. Доверие упало до ${Math.round(b.conf)}%.` });
@@ -255,10 +254,10 @@
   /* Предложения работы после увольнения: клубы скромнее и те, что недавно уволили тренера */
   function jobOffers(st) {
     const old = st.sacked ? club(st, st.sacked.club) : null;
-    const lvl = old ? (old.fin.target || 10) : 10;
+    const lvl = old ? FIN().level(old) : 10;
     const cands = st.clubs.filter(c => c !== old).map(c => {
-      const recent = st.sacks && st.sacks[c.id + '@' + st.season];
-      return { c, s: (recent ? 3 : 0) + ((c.fin.target || 10) >= lvl ? 2 : -((lvl - (c.fin.target || 10)) * 0.8)) + U.rnd() * 2 };
+      const recent = st.sacks && st.sacks[c.id + '@' + st.season], L = FIN().level(c);
+      return { c, s: (recent ? 3 : 0) + (L >= lvl ? 2 - Math.max(0, L - lvl - 8) * 0.25 : -((lvl - L) * 0.8)) + U.rnd() * 2 };
     }).sort((a, b) => b.s - a.s);
     return cands.slice(0, 3).map(x => x.c);
   }
@@ -269,6 +268,7 @@
     st.userClub = nc.id;
     st.userTactics = TAC.defaultTactics(nc);
     st.board = { conf: 55, target: nc.fin.target || 10 };
+    st.lg = nc.league || st.lg;
     st.sacked = null;
     if (TR()) { const m = TR().market(st); m.listed = []; m.offers = []; m.short = []; }
     st.career = (st.career || []).concat([{ club: nc.id, season: st.seasonName, round: st.round + 1 }]);
@@ -300,9 +300,10 @@
   }
   /* После каждого тура (st.round уже указывает на следующий тур) */
   function afterRound(st) {
-    if (st.round === 30) announceRetirements(st);
+    const K = G.LEAGUE.cal(st);
+    if (st.round === K.retire) announceRetirements(st);
     aiSackings(st);
-    if (st.round > 0 && st.round % 4 === 0) aiFree(st, false);
+    if (st.round > 0 && st.round % K.freeEvery === 0) aiFree(st, false);
     checkUser(st, false);
   }
 

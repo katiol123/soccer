@@ -6,10 +6,16 @@
 
   /* Вместимость стадионов (тыс. мест) */
   const CAPACITY = { ars: 60.7, avl: 42.8, bou: 11.3, bre: 17.3, bha: 31.8, bur: 21.9, che: 40.3, cry: 25.5, eve: 52.9, ful: 29.6, lee: 37.8, liv: 61.3, mci: 53.4, mun: 74.3, new: 52.3, nfo: 30.4, sun: 49.0, tot: 62.8, whu: 62.5, wol: 31.8 };
-  const ROUNDS = 38;
-  const TV_EQUAL = 85;            // равная доля телеправ за сезон
-  const TV_MERIT = 3.2;            // за каждое место выше 20-го
-  const EURO = [55, 55, 55, 55, 25, 12]; // премия за еврокубки по местам 1–6
+  /* Экономика лиги: телеправа, премии, коэффициенты билетов/спонсоров/расходов (см. DATA.LEAGUES) */
+  const DEF_FIN = { tvEqual: 85, tvMerit: 3.2, euro: [55, 55, 55, 55, 25, 12], ticketK: 1, commK: 1, opsK: 1 };
+  function lgFin(club) { const L = G.DATA && G.DATA.LEAGUES[club.league]; return (L && L.fin) || DEF_FIN; }
+  function lgSize(club) { const L = G.DATA && G.DATA.LEAGUES[club.league]; return L ? L.clubs.length : 20; }
+  function weeks(st) { return G.LEAGUE && st.leagues ? G.LEAGUE.weeks(st) : 38; }
+  /* Уровень клуба для сравнения между лигами: ожидаемое место + 20 за каждый дивизион ниже (меньше — выше) */
+  function level(club) {
+    const L = G.DATA && G.DATA.LEAGUES[club.league];
+    return ((L ? L.tier : 1) - 1) * 20 + ((club.fin && club.fin.target) || 10);
+  }
 
   /* ---------- игрок ---------- */
   function ageK(age) {
@@ -40,7 +46,8 @@
   }
   /* «Справедливая» зарплата по уровню игрока, тыс. £/нед */
   function fairWage(p) {
-    const w = 30 + 9 * Math.pow(baseValue(p), 0.7) * (p.age >= 31 ? 0.85 : 1) * (p.star ? 1.25 : 1);
+    const bv = baseValue(p);
+    const w = 30 * Math.min(1, Math.pow(bv / 8, 1.3)) + 9 * Math.pow(bv, 0.7) * (p.age >= 31 ? 0.85 : 1) * (p.star ? 1.25 : 1);
     return Math.round(w);
   }
   /* Уровень клуба для игрока: ожидаемое место и сила игрока относительно состава */
@@ -51,7 +58,7 @@
   /* Хочет ли амбициозный игрок в клуб уровнем выше */
   function outgrown(p, club) {
     const h = p.h || {};
-    return (h.amb || 10) >= 14 && TAC.overall(p) >= clubCore(club) + 1 && ((club.fin && club.fin.target) || 10) > 6;
+    return (h.amb || 10) >= 14 && TAC.overall(p) >= clubCore(club) + 1 && level(club) > 6;
   }
   function moodLabel(m) {
     return m >= 80 ? ['Счастлив', '😄'] : m >= 60 ? ['Доволен', '🙂'] : m >= 40 ? ['Нейтрален', '😐'] : m >= 20 ? ['Недоволен', '😒'] : ['Хочет уйти', '😠'];
@@ -123,16 +130,17 @@
   }
   const yearly = w => w * 52 / 1000;                                              // тыс./нед → млн/год
   function squadValue(club) { return Math.round(U.sum(club.players, value)); }
-  function ticket(club) { return 40 + (club.str - 10) * 10; }                     // £ за билет
-  function commercial(club) { return 12 * Math.exp(0.65 * (club.str - 10)); }      // млн/сезон
-  function operating(club) { return 30 + (club.str - 10) * 15; }                   // млн/сезон
+  function ticket(club) { return Math.max(15, (40 + (club.str - 10) * 10) * lgFin(club).ticketK); }    // £ за билет
+  function commercial(club) { return 12 * Math.exp(0.65 * (club.str - 10)) * lgFin(club).commK; }       // млн/сезон
+  function operating(club) { return Math.max(4, (30 + (club.str - 10) * 15) * lgFin(club).opsK); }     // млн/сезон
+  function para(club) { return (club.fin && club.fin.para && club.fin.para[0]) || 0; }                  // «парашют», млн/сезон
 
   function emptyLedger() { return { tv: 0, gate: 0, comm: 0, prize: 0, wages: 0, ops: 0, transfers: 0 }; }
 
   /* Прогноз доходов на сезон (для бюджета зарплат) */
   function projectedIncome(club, expectedPos) {
-    const cap = club.cap || CAPACITY[club.id] || 30;
-    return TV_EQUAL + TV_MERIT * (21 - expectedPos) + cap * ticket(club) * 0.95 * 19 / 1000 + commercial(club) + (EURO[expectedPos - 1] || 0);
+    const cap = club.cap || CAPACITY[club.id] || 30, F = lgFin(club), N = lgSize(club);
+    return F.tvEqual + F.tvMerit * (N + 1 - expectedPos) + cap * ticket(club) * 0.95 * (N - 1) / 1000 + commercial(club) + ((F.euro || [])[expectedPos - 1] || 0) + para(club);
   }
 
   function setBudget(st, club, expectedPos) {
@@ -163,7 +171,8 @@
     const exp = expectedPositions(st);
     st.clubs.forEach(c => {
       if (!c.fin) {
-        c.fin = { balance: Math.round(20 + (c.str - 10) * 35), season: emptyLedger(), last: null, hist: [] };
+        const t2 = G.DATA && G.DATA.LEAGUES[c.league] && G.DATA.LEAGUES[c.league].tier > 1;
+        c.fin = { balance: Math.round(t2 ? 10 + (c.str - 9) * 8 : 20 + (c.str - 10) * 35), season: emptyLedger(), last: null, hist: [] };
         c.fin.hist.push(c.fin.balance);
       }
       c.fin.target = exp[c.id];
@@ -183,21 +192,24 @@
   function matchday(st, fixture, table) {
     const club = st.clubs.find(c => c.id === fixture.h);
     if (!club || !club.fin) return;
-    const pos = table ? table.findIndex(r => r.id === club.id) + 1 : 10;
-    const att = U.clamp(0.82 + (20 - pos) * 0.008 + U.rnd() * 0.05, 0.75, 1);
+    const N = table ? table.length : 20;
+    const pos = table ? table.findIndex(r => r.id === club.id) + 1 : N / 2;
+    const att = U.clamp(0.82 + (N - pos) * 0.008 * 20 / N + U.rnd() * 0.05 + (fixture.po ? 0.15 : 0), 0.7, 1);
     const gate = (club.cap || CAPACITY[club.id] || 30) * att * ticket(club) / 1000;
     book(club, 'gate', Math.round(gate * 100) / 100);
     fixture.res.att = Math.round((club.cap || CAPACITY[club.id] || 30) * att * 1000);
   }
 
-  /* Каждый тур: телеправа (равная доля), спонсоры, зарплаты, операционные расходы */
+  /* Каждую неделю календаря: телеправа (равная доля) и «парашют», спонсоры, зарплаты, операционные расходы.
+     Годовые суммы делятся на число недель сезона — одинаково для всех лиг, в том числе в недели без матчей */
   function round(st) {
+    const W = weeks(st);
     for (const c of st.clubs) {
       if (!c.fin) continue;
-      book(c, 'tv', TV_EQUAL / ROUNDS);
-      book(c, 'comm', commercial(c) / ROUNDS);
-      book(c, 'wages', -yearly(wageBill(c)) / ROUNDS);
-      book(c, 'ops', -operating(c) / ROUNDS);
+      book(c, 'tv', (lgFin(c).tvEqual + para(c)) / W);
+      book(c, 'comm', commercial(c) / W);
+      book(c, 'wages', -yearly(wageBill(c)) / W);
+      book(c, 'ops', -operating(c) / W);
       c.fin.balance = Math.round(c.fin.balance * 100) / 100;
       c.fin.hist.push(c.fin.balance);
       if (c.fin.hist.length > 80) c.fin.hist.shift();
@@ -207,9 +219,9 @@
     if (st.userClub) { boardRound(st); contractReminder(st); }
   }
 
-  /* Напоминание об истекающих контрактах (тур 25 и 33) */
+  /* Напоминание об истекающих контрактах (≈2/3 и ≈5/6 сезона) */
   function contractReminder(st) {
-    if (st.round !== 24 && st.round !== 32) return;
+    if (!G.LEAGUE.cal(st).remind.includes(st.round)) return;
     const club = st.clubs.find(c => c.id === st.userClub);
     const exp = club.players.filter(p => p.contract <= 1 && !(p.loan && p.loan.to === club.id)).concat(G.TR ? G.TR.loansOut(st, club.id).map(x => x.p).filter(p => p.contract <= 1) : []);
     if (exp.length) st.news.push({ r: st.round, text: `✍ У ${exp.length} ${U.plural(exp.length, 'игрока', 'игроков', 'игроков')} контракт истекает летом: ${exp.slice(0, 5).map(p => p.name).join(', ')}${exp.length > 5 ? '…' : ''}. Продлите их в разделе «Финансы», иначе они уйдут бесплатно.` });
@@ -223,7 +235,9 @@
     const b = st.board;
     const played = table[0].p;
     if (played < 3) return;
-    let d = (b.target - pos) * 0.15;
+    // неделя без матча (пауза в лиге, плей-офф) — доверие не меняется
+    if (!G.LEAGUE.weekFixtures(st).some(f => !f.po && (f.h === st.userClub || f.a === st.userClub))) return;
+    let d = (b.target - pos) * 0.15 * 20 / table.length * 38 / G.LEAGUE.roundsTotal(st);
     if (club.fin.balance < 0) d -= 1.5;
     if (wageBill(club) > club.fin.wageBudget) d -= 1;
     b.conf = U.clamp(Math.round((b.conf + d) * 10) / 10, 0, 100);
@@ -232,13 +246,15 @@
   }
 
   /* Конец сезона: призовые, еврокубки, итоги, контракты */
-  function seasonEnd(st, table) {
+  function seasonEnd(st, table, sum) {
     const report = [];
     const tables = st.leagues ? Object.keys(st.leagues).map(lid => G.LEAGUE.standings(st, lid)) : [table];
     tables.forEach(tbl => tbl.forEach((r, i) => {
       const c = st.clubs.find(x => x.id === r.id);
       if (!c || !c.fin) return;
-      book(c, 'prize', TV_MERIT * (20 - i) + (EURO[i] || 0));
+      const F = lgFin(c);
+      book(c, 'prize', F.tvMerit * (tbl.length - 1 - i) + ((F.euro || [])[i] || 0));
+      if (c.fin.para) { c.fin.para = c.fin.para.slice(1); if (!c.fin.para.length) c.fin.para = null; }
       const s = c.fin.season;
       c.fin.last = Object.assign({}, s, { season: st.seasonName, profit: Math.round((s.tv + s.gate + s.comm + s.prize + s.wages + s.ops + (s.transfers || 0)) * 10) / 10, pos: i + 1 });
       c.fin.season = emptyLedger();
@@ -246,10 +262,15 @@
     // совет директоров подводит итоги
     if (st.userClub) {
       const pos = table.findIndex(r => r.id === st.userClub) + 1;
-      const b = st.board, delta = b.target - pos;
-      const verdict = delta >= 3 ? 'в восторге' : delta >= 0 ? 'доволен' : delta >= -3 ? 'разочарован' : 'в ярости';
-      b.conf = U.clamp(b.conf + delta * 4, 5, 100);
-      st.news.push({ r: 0, text: `🏛 Совет директоров ${verdict}: цель — ${b.target}-е место, итог — ${pos}-е. Доверие ${Math.round(b.conf)}%.` });
+      const b = st.board, delta = (b.target - pos) * 20 / table.length;
+      const up = sum && sum.promoted.some(x => x.id === st.userClub), down = sum && sum.relegated.some(x => x.id === st.userClub);
+      let verdict = delta >= 3 ? 'в восторге' : delta >= 0 ? 'доволен' : delta >= -3 ? 'разочарован' : 'в ярости';
+      let conf = b.conf + delta * 4;
+      if (up) { verdict = 'в восторге'; conf = Math.max(conf, b.conf) + 25; }
+      if (down) { verdict = 'в ярости'; conf -= b.target <= table.length - 3 ? 25 : 8; }
+      b.conf = U.clamp(conf, 5, 100);
+      const extra = up ? ' Клуб повышается в классе!' : down ? ' Клуб покидает лигу.' : '';
+      st.news.push({ r: 0, text: `🏛 Совет директоров ${verdict}: цель — ${b.target}-е место, итог — ${pos}-е.${extra} Доверие ${Math.round(b.conf)}%.` });
     }
     // контракты: ИИ-клубы продлевают нужных, непродлённые становятся свободными агентами
     G.CAR.contractsEnd(st, report);
@@ -303,10 +324,16 @@
 
   /* Настроение после тура: игровое время, важность игрока, амбиции, результат */
   function moodRound(st) {
-    const rd = st.fixtures[st.round] || [];
-    const res = {};
-    rd.forEach(f => { if (!f.res) return; const d = Math.sign(f.res.hs - f.res.as); res[f.h] = d; res[f.a] = -d; });
+    const rd = G.LEAGUE ? G.LEAGUE.weekFixtures(st) : (st.fixtures[st.round] || []);
+    const res = {}, played = new Set();
+    rd.forEach(f => {
+      played.add(f.h); played.add(f.a);
+      if (!f.res) return;
+      const w = G.LEAGUE.winner(f), d = f.res.hs !== f.res.as ? Math.sign(f.res.hs - f.res.as) : f.po ? (w === f.h ? 1 : -1) : 0;
+      res[f.h] = d; res[f.a] = -d;
+    });
     for (const c of st.clubs) {
+      if (!played.has(c.id)) continue; // неделя без матча: игровое время не учитывается
       const core = clubCore(c);
       for (const p of c.players) {
         if (!p.h) continue;
@@ -343,5 +370,5 @@
   const fmtM = v => (v < 0 ? '−' : '') + '£' + Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1) + ' млн';
   const fmtW = v => '£' + Math.round(v) + ' тыс./нед';
 
-  G.FIN = { CAPACITY, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
+  G.FIN = { CAPACITY, level, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
 })(typeof window !== 'undefined' ? window : globalThis);

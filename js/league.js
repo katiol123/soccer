@@ -1,4 +1,4 @@
-/* Чемпионат Англии: календарь, таблица, статистика, сохранение */
+/* Турниры: общий календарь недель, таблицы, плей-офф, вылет/повышение, статистика, сохранение */
 (function (G) {
   'use strict';
   const U = G.U, TAC = G.TAC, DATA = G.DATA;
@@ -56,20 +56,117 @@
     return st;
   }
   function leagueInfo(st, lid) { const L = DATA.LEAGUES[lid || st.lg]; return L || { id: lid, name: 'Лига', short: '', flag: '' }; }
+  function leagueIds(st) { return DATA.LEAGUE_ORDER.filter(id => st.leagues[id]).concat(Object.keys(st.leagues).filter(id => !DATA.LEAGUE_ORDER.includes(id))); }
+  function tier(c) { const L = DATA.LEAGUES[c.league]; return L ? L.tier : 1; }
+
+  /* ---------- календарь: общая шкала недель ---------- */
+  /* Все лиги живут на одной шкале недель. Самая длинная лига играет каждую неделю,
+     остальные распределяют туры равномерно (в свободные недели — пауза). Плей-офф — в последних неделях. */
+  function buildCalendar(st) {
+    const sched = {};
+    let span = 0;
+    for (const lid of leagueIds(st)) {
+      sched[lid] = schedule(U.shuffle(leagueClubs(st, lid).map(c => c.id)));
+      span = Math.max(span, sched[lid].length);
+    }
+    const po = leagueIds(st).some(lid => DATA.LEAGUES[lid] && DATA.LEAGUES[lid].playoff) ? 2 : 0;
+    st.weeks = span + po;
+    for (const lid of leagueIds(st)) {
+      const R = sched[lid], weeks = Array.from({ length: st.weeks }, () => []);
+      R.forEach((rd, k) => { weeks[R.length === span ? k : Math.round(k * (span - 1) / (R.length - 1))] = rd; });
+      st.leagues[lid].fixtures = weeks;
+      st.leagues[lid].rounds = R.length;
+    }
+  }
+  function weeks(st) { return st.weeks || st.fixtures.length; }
+  /* Ключевые недели сезона (в долях его длины — работает для любой длины календаря) */
+  function cal(st) {
+    const W = weeks(st), at = f => Math.round(W * f);
+    return {
+      weeks: W,
+      summerEnd: Math.floor(W * 0.066),            // окно открыто, пока round <= summerEnd
+      winter: [Math.ceil(W * 0.47), Math.floor(W * 0.53)],
+      remind: [at(0.63), at(0.84)],
+      retire: at(0.79),
+      sacks: [at(0.32), at(0.53), at(0.74)],
+      boardMin: at(0.21),
+      freeEvery: Math.max(3, at(0.1))
+    };
+  }
+  /* Номер тура лиги для недели (пауза → null) */
+  function roundOf(st, lid, week) {
+    const fx = st.leagues[lid || st.lg].fixtures;
+    if (week == null) week = st.round;
+    let n = 0;
+    for (let i = 0; i <= Math.min(week, fx.length - 1); i++) if (fx[i].length && !fx[i][0].po) n++;
+    return fx[week] && fx[week].length && !fx[week][0].po ? n : null;
+  }
+  function roundsTotal(st, lid) { return st.leagues[lid || st.lg].rounds || st.leagues[lid || st.lg].fixtures.filter(r => r.length).length; }
+  function weekLabel(st, lid, week) {
+    lid = lid || st.lg; if (week == null) week = st.round;
+    const fx = st.leagues[lid].fixtures[week];
+    if (fx && fx.length && fx[0].po) return fx[0].po === 'final' ? 'Финал плей-офф' : 'Полуфиналы плей-офф';
+    const r = roundOf(st, lid, week);
+    return r ? `Тур ${r}/${roundsTotal(st, lid)}` : 'Пауза в лиге';
+  }
+  /* Все матчи недели во всех лигах */
+  function weekFixtures(st, week) {
+    if (week == null) week = st.round;
+    const out = [];
+    for (const lid of leagueIds(st)) (st.leagues[lid].fixtures[week] || []).forEach(f => out.push(f));
+    return out;
+  }
+  /* Сколько матчей клуб сыграл бы в неделях [from, to) */
+  function clubMatches(st, cid, from, to) {
+    const c = club(st, cid); if (!c) return 0;
+    const fx = st.leagues[c.league] ? st.leagues[c.league].fixtures : [];
+    let n = 0;
+    for (let w = Math.max(0, from); w < Math.min(to, fx.length); w++) if (fx[w].some(f => f.h === cid || f.a === cid)) n++;
+    return n;
+  }
+
+  /* ---------- плей-офф ---------- */
+  function winner(f) {
+    if (!f.res) return null;
+    if (f.res.hs !== f.res.as) return f.res.hs > f.res.as ? f.h : f.a;
+    return f.res.pen === 'a' ? f.a : f.h;
+  }
+  function playoffStep(st) {
+    for (const lid of leagueIds(st)) {
+      const L = DATA.LEAGUES[lid];
+      if (!L || !L.playoff) continue;
+      const fx = st.leagues[lid].fixtures, W = fx.length;
+      if (st.round === W - 2 && !fx[W - 2].length) {
+        const t = standings(st, lid), s = i => t[i - 1].id;
+        fx[W - 2] = [{ h: s(3), a: s(6), po: 'semi', res: null }, { h: s(4), a: s(5), po: 'semi', res: null }];
+        st.news.push({ r: st.round, text: `🎟 Плей-офф ${L.name}: ${club(st, s(3)).name} — ${club(st, s(6)).name}, ${club(st, s(4)).name} — ${club(st, s(5)).name}. Победитель финала выходит в ${DATA.LEAGUES.eng1.acc}!` });
+      }
+      if (st.round === W - 1 && !fx[W - 1].length && fx[W - 2].length) {
+        const [a, b] = fx[W - 2].map(winner);
+        const t = standings(st, lid), pos = id => t.findIndex(r => r.id === id);
+        const h = pos(a) < pos(b) ? a : b, aw = h === a ? b : a;
+        fx[W - 1] = [{ h, a: aw, po: 'final', res: null }];
+        st.news.push({ r: st.round, text: `🏟 Финал плей-офф на «Уэмбли»: «${club(st, h).name}» — «${club(st, aw).name}». Самый дорогой матч в мире футбола!` });
+      }
+    }
+  }
 
   function newGame(opts) {
-    const lid = opts.league || 'eng1';
-    const clubs = opts.world || DATA.createWorld(opts.seed || Math.floor(Math.random() * 1e9), [lid]);
-    const ids = U.shuffle(clubs.filter(c => c.league === lid).map(c => c.id));
+    const clubs = opts.world || DATA.createWorld(opts.seed || Math.floor(Math.random() * 1e9));
+    const lids = DATA.LEAGUE_ORDER.filter(id => clubs.some(c => c.league === id));
+    const user = opts.clubId ? clubs.find(c => c.id === opts.clubId) : null;
+    const lid = user ? user.league : (opts.league || lids[0]);
     const st = {
       v: 2, mode: opts.mode, userClub: opts.clubId || null,
       season: 1, seasonName: '2025/26', round: 0,
-      lg: lid, leagues: { [lid]: { id: lid, fixtures: schedule(ids) } },
+      lg: lid, leagues: {},
       clubs,
       settings: { turns: opts.turns || 24, speed: 1, sound: true },
       userTactics: null, news: []
     };
+    lids.forEach(id => { st.leagues[id] = { id, fixtures: [] }; });
     attach(st);
+    buildCalendar(st);
     if (st.userClub) {
       const c = club(st, st.userClub);
       st.userTactics = TAC.defaultTactics(c);
@@ -87,7 +184,7 @@
     const rows = {};
     leagueClubs(st, lid).forEach(c => { rows[c.id] = { id: c.id, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, form: [] }; });
     st.leagues[lid].fixtures.forEach(rd => rd.forEach(f => {
-      if (!f.res) return;
+      if (!f.res || f.po) return;
       const h = rows[f.h], a = rows[f.a], hs = f.res.hs, as = f.res.as;
       h.p++; a.p++; h.gf += hs; h.ga += as; a.gf += as; a.ga += hs;
       if (hs > as) { h.w++; a.l++; h.pts += 3; h.form.push('W'); a.form.push('L'); }
@@ -128,14 +225,24 @@
       }
     }
     fixture.res = { hs: match.score.home, as: match.score.away, goals, stats, motm: motm ? motm.name : null, motmR: motm ? motm.m.rating : null, watched: !!match.watched };
-    G.FIN.matchday(st, fixture, standings(st));
+    // плей-офф: ничья — серия пенальти (шанс зависит от силы и хладнокровия)
+    if (fixture.po && fixture.res.hs === fixture.res.as) {
+      const ch = c => TAC.teamRating(c) + U.avg(c.players.map(p => p.a.com)) * 0.15;
+      const H = match.t.home.club, A = match.t.away.club;
+      const pH = U.clamp(0.5 + (ch(H) - ch(A)) * 0.05, 0.3, 0.7);
+      fixture.res.pen = U.rnd() < pH ? 'h' : 'a';
+      const w = fixture.res.pen === 'h' ? H : A;
+      st.news.push({ r: st.round, text: `🎯 ${fixture.po === 'final' ? 'Финал' : 'Полуфинал'} плей-офф: ${H.name} ${fixture.res.hs}:${fixture.res.as} ${A.name}, в серии пенальти сильнее «${w.name}»!` });
+    }
+    const hc = club(st, fixture.h);
+    G.FIN.matchday(st, fixture, standings(st, hc ? hc.league : st.lg));
     // очистка временных данных
     for (const s of ['home', 'away']) match.t[s].club.players.forEach(p => { delete p.m; });
   }
 
   /* Переход к следующему туру: восстановление, травмы, дисквалификации */
   function advance(st) {
-    const rd = st.fixtures[st.round];
+    const rd = weekFixtures(st);
     const playedClubs = new Set();
     rd.forEach(f => { playedClubs.add(f.h); playedClubs.add(f.a); });
     st.clubs.forEach(c => c.players.forEach(p => {
@@ -145,6 +252,7 @@
     }));
     G.FIN.round(st);
     st.round++;
+    playoffStep(st);
     if (G.TR) G.TR.afterRound(st);
     G.CAR.afterRound(st);
     if (st.userClub) fixUserTactics(st);
@@ -176,20 +284,77 @@
     return msgs;
   }
 
-  function seasonOver(st) { return st.round >= st.fixtures.length; }
+  function seasonOver(st) { return st.round >= weeks(st); }
+
+  /* Итоги сезона: чемпионы, вылет и повышение */
+  function seasonSummary(st) {
+    const out = { champions: {}, promoted: [], relegated: [], playoff: null };
+    const ids = leagueIds(st);
+    ids.forEach(lid => { const t = standings(st, lid); out.champions[lid] = t[0] ? t[0].id : null; });
+    for (let i = 0; i < ids.length - 1; i++) {
+      const up = DATA.LEAGUES[ids[i]], low = DATA.LEAGUES[ids[i + 1]];
+      if (!up || !low) continue;
+      const tu = standings(st, up.id), tl = standings(st, low.id);
+      const down = tu.slice(-(up.relegate || 3)).map(r => r.id);
+      const rise = tl.slice(0, low.promote || 2).map(r => r.id);
+      const fx = st.leagues[low.id].fixtures, fin = fx[fx.length - 1] && fx[fx.length - 1][0];
+      const po = fin && fin.po === 'final' ? winner(fin) : (tl[low.promote || 2] ? tl[low.promote || 2].id : null);
+      if (po) { rise.push(po); out.playoff = po; }
+      down.forEach(id => out.relegated.push({ id, from: up.id, to: low.id }));
+      rise.forEach(id => out.promoted.push({ id, from: low.id, to: up.id }));
+    }
+    return out;
+  }
+
+  /* Перевод клубов между лигами */
+  function moveClubs(st, sum) {
+    const W = weeks(st);
+    for (const r of sum.relegated) {
+      const c = club(st, r.id); c.league = r.to; c.str = Math.max(8, c.str - 0.4);
+      const P = DATA.LEAGUES[r.to].fin.parachute;
+      if (P && c.fin) c.fin.para = P.slice();
+      // пункт о вылете в контрактах: зарплаты −25%
+      c.players.forEach(p => { p.wage = Math.round(p.wage * 0.75); if (p.h && p.h.amb >= 13) p.mood = Math.max(0, (p.mood || 60) - 15); });
+      if (c.id === st.userClub) st.news.push({ r: 0, text: `⬇ «${c.name}» вылетает в ${DATA.LEAGUES[r.to].acc}. По условиям контрактов зарплаты снижены на 25%, «парашютные» выплаты помогут пережить удар. Амбициозные игроки расстроены.` });
+    }
+    for (const r of sum.promoted) {
+      const c = club(st, r.id); c.league = r.to; c.str = c.str + 0.4; if (c.fin) c.fin.para = null;
+      if (c.id === st.userClub) st.news.push({ r: 0, text: `⬆ «${c.name}» выходит в ${DATA.LEAGUES[r.to].acc}! Впереди — большие деньги и сильнейшие соперники.` });
+    }
+    void W;
+  }
+
+  /* Лиги из реестра, которых нет в старом сохранении, появляются с нового сезона */
+  function addMissingLeagues(st) {
+    const added = [];
+    for (const lid of DATA.LEAGUE_ORDER) {
+      if (st.leagues[lid] || st.clubs.some(c => c.league === lid)) continue;
+      const used = new Set(); st.clubs.forEach(c => c.players.forEach(p => used.add(p.name)));
+      const rng = U.seeded(Math.floor(Math.random() * 1e9));
+      DATA.LEAGUES[lid].clubs.forEach(c => { if (!club(st, c.id)) st.clubs.push(DATA.makeClub(c, DATA.LEAGUES[lid], rng, used)); });
+      st.leagues[lid] = { id: lid, fixtures: [] };
+      added.push(lid);
+    }
+    if (added.length) { G.FIN.init(st); G.CAR.ensure(st); st.news.push({ r: 0, text: `🌍 Новый турнир в игре: ${added.map(l => DATA.LEAGUES[l].name).join(', ')}.` }); }
+  }
 
   function newSeason(st) {
+    const sum = seasonSummary(st);
     const table = standings(st);
     st.history = st.history || [];
-    st.history.push({ season: st.seasonName, champion: table[0].id, user: st.userClub ? table.findIndex(r => r.id === st.userClub) + 1 : null });
+    st.history.push({ season: st.seasonName, champion: table[0].id, champions: sum.champions, promoted: sum.promoted.map(x => x.id), relegated: sum.relegated.map(x => x.id), playoff: sum.playoff, lg: st.lg, user: st.userClub ? table.findIndex(r => r.id === st.userClub) + 1 : null });
+    st.lastSummary = sum;
     if (G.TR) G.TR.endLoans(st);
     G.CAR.retire(st);
-    G.FIN.seasonEnd(st, table);
+    G.FIN.seasonEnd(st, table, sum);
+    moveClubs(st, sum);
+    addMissingLeagues(st);
+    if (st.userClub) st.lg = club(st, st.userClub).league;
     st.season++;
     const y = 2024 + st.season;
     st.seasonName = y + '/' + String(y + 1).slice(2);
     st.round = 0;
-    for (const lid in st.leagues) st.leagues[lid].fixtures = schedule(U.shuffle(leagueClubs(st, lid).map(c => c.id)));
+    buildCalendar(st);
     const devs = [];
     st.clubs.forEach(c => c.players.forEach(p => {
       p.age++;
@@ -249,9 +414,9 @@
     return p.dev;
   }
 
-  function topScorers(st, n) {
+  function topScorers(st, n, lid) {
     const all = [];
-    st.clubs.forEach(c => c.players.forEach(p => { if (p.st.goals || p.st.assists) all.push({ p, c }); }));
+    st.clubs.forEach(c => { if (lid && c.league !== lid) return; c.players.forEach(p => { if (p.st.goals || p.st.assists) all.push({ p, c }); }); });
     return all.sort((a, b) => b.p.st.goals - a.p.st.goals || b.p.st.assists - a.p.st.assists).slice(0, n || 15);
   }
 
@@ -282,5 +447,5 @@
   async function exportSave(st) { await G.STORE.exportFile(serialize(st), `kombinaciya-${st.seasonName.replace('/', '-')}-tur${st.round + 1}`); }
   async function importSave(file) { const st = revive(await G.STORE.importFile(file)); if (!st) throw new Error('Файл не похож на сохранение игры'); save(st); return st; }
 
-  G.LEAGUE = { leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
+  G.LEAGUE = { leagueIds, tier, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
 })(typeof window !== 'undefined' ? window : globalThis);
