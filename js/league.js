@@ -71,7 +71,7 @@
     for (const s of ['home', 'away']) {
       const ts = match.t[s];
       for (const p of ts.club.players) {
-        if (!p.m) continue;
+        if (!p.m || !p.m.played) continue;
         if (p.m.played) {
           p.st.apps++; p.st.goals += p.m.goals; p.st.assists += p.m.assists;
           p.st.yc += p.m.yc; p.st.rsum += p.m.rating || 6.5;
@@ -79,7 +79,8 @@
           if (p.m.yc && !p.m.rc) { p.yc += p.m.yc; if (p.yc >= 5) { p.susp = Math.max(p.susp, 1); p.yc = 0; } }
           if (p.m.inj) p.inj = U.randInt(1, 4);
           p.fit = Math.round(p.m.fit);
-          p.form = U.clamp((p.form * 3 + (p.m.rating || 6.5)) / 4, 4, 10);
+          p.lastR = (p.lastR || []).concat([p.m.rating || 6.5]).slice(-5);
+          p.form = TAC.computeForm(p);
           if (!motm || (p.m.rating || 0) > (motm.m.rating || 0)) motm = p;
         }
       }
@@ -140,17 +141,52 @@
     st.seasonName = y + '/' + String(y + 1).slice(2);
     st.round = 0;
     st.fixtures = schedule(U.shuffle(st.clubs.map(c => c.id)));
+    const devs = [];
     st.clubs.forEach(c => c.players.forEach(p => {
       p.age++;
-      const delta = p.age <= 23 ? 1 : p.age >= 31 ? -1 : 0;
-      for (const k in p.a) {
-        if (k === 'ref' && p.pos !== 'GK') continue;
-        if (U.chance(0.45)) p.a[k] = U.clamp(p.a[k] + delta + (U.chance(0.3) ? U.randInt(-1, 1) : 0), 1, 20);
-      }
+      const d = develop(p);
+      devs.push({ p, c, d });
+      p.lastR = (p.lastR || []).slice(-2); // в новый сезон переносятся только 2 последние оценки
+      p.form = TAC.computeForm(p);
       p.fit = 100; p.inj = 0; p.susp = 0; p.yc = 0;
       p.st = { apps: 0, goals: 0, assists: 0, yc: 0, rc: 0, rsum: 0 };
     }));
+    // новости межсезонья
+    const pool = st.userClub ? devs.filter(x => x.c.id === st.userClub) : devs;
+    const up = pool.filter(x => x.d.total > 0).sort((a, b) => b.d.total - a.d.total).slice(0, 3);
+    const down = pool.filter(x => x.d.total < 0).sort((a, b) => a.d.total - b.d.total).slice(0, 3);
+    if (up.length) st.news.push({ r: 0, text: '📈 Прогресс за межсезонье: ' + up.map(x => `${x.p.name} (+${x.d.total}${x.d.avg ? ', ср. ' + x.d.avg.toFixed(2) : ''})`).join(', ') + '.' });
+    if (down.length) st.news.push({ r: 0, text: '📉 Сдали: ' + down.map(x => `${x.p.name} (${x.d.total}${x.d.avg ? ', ср. ' + x.d.avg.toFixed(2) : ''})`).join(', ') + '.' });
     if (st.userClub) fixUserTactics(st);
+  }
+
+  /* Развитие игрока за межсезонье: возраст + средняя оценка + игровое время */
+  function develop(p) {
+    const apps = p.st.apps, avg = apps ? p.st.rsum / apps : null;
+    const grade = apps < 5 ? 'few' : avg > 7.0 ? 'good' : avg < 6.3 ? 'bad' : 'ok';
+    const play = U.clamp(apps / 19, 0.25, 1);
+    const perfK = { good: 1.5, ok: 1, bad: 0.55, few: 0.8 }[grade];
+    let total = 0;
+    for (const k in p.a) {
+      if (k === 'ref' && p.pos !== 'GK') continue;
+      let delta = 0;
+      if (p.age <= 23) {
+        if (U.chance(0.45 * (0.5 + 0.5 * play) * perfK)) delta = grade === 'good' && U.chance(0.25) ? 2 : 1;
+        if (grade === 'bad' && U.chance(0.08)) delta -= 1;
+      } else if (p.age <= 30) {
+        if (grade === 'good' && U.chance(0.2 * play)) delta = 1;
+        if (grade === 'bad' && U.chance(0.12)) delta = -1;
+      } else {
+        const declK = { good: 0.5, ok: 1, bad: 1.4, few: 1.15 }[grade];
+        if (U.chance(0.45 * declK)) delta = -1;
+      }
+      if (U.chance(0.12)) delta += U.randInt(-1, 1);
+      const nv = U.clamp(p.a[k] + delta, 1, 20);
+      total += nv - p.a[k];
+      p.a[k] = nv;
+    }
+    p.dev = { total, avg, apps, grade };
+    return p.dev;
   }
 
   function topScorers(st, n) {
@@ -173,6 +209,7 @@
       const st = JSON.parse(s);
       if (!st || st.v !== 1) return null;
       if (G.TRAITS) G.TRAITS.ensure(st.clubs);
+      st.clubs.forEach(c => c.players.forEach(p => { if (!p.lastR) { p.lastR = []; p.form = TAC.computeForm(p); } }));
       return st;
     } catch (e) { return null; }
   }

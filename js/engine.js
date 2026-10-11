@@ -55,6 +55,7 @@
     static initPlayer(p, side) {
       p.m = { side, fit: p.fit, perf: 0, goals: 0, assists: 0, yc: 0, rc: false, off: false, inj: false, played: false, saves: 0, shift: 0 };
       if (TRAITS.has(p, 'inconsistent')) p.m.shift = U.rnd() < 0.5 ? 2 : -2;
+      p.m.formB = TAC.formBonus(p);
     }
 
     constructor(cfg) {
@@ -131,9 +132,8 @@
     /* Эффективная характеристика игрока с учётом особенностей */
     pa(p, k) {
       let v = p.a[k];
-      if (!p.tr || !p.tr.length) return v;
       const side = p.m ? p.m.side : 'home';
-      for (const id of p.tr) {
+      for (const id of (p.tr || [])) {
         const t = TL[id];
         if (!t) continue;
         if (t.attr && this.cond(side, t.when)) v += (t.attr[k] || 0) + (t.attr.all || 0);
@@ -141,6 +141,7 @@
         if (id === 'flatTrack' && this.cond(side, 'strongOpp')) v -= 1;
       }
       if (p.m && p.m.shift) v += p.m.shift;
+      if (p.m && p.m.formB) v += p.m.formB;
       return U.clamp(v, 1, 22);
     }
     /* Командный множитель (произведение по игрокам на поле) */

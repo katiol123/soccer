@@ -470,7 +470,7 @@
       ts.onPitch.forEach(x => {
         if (!x.p) { col.appendChild(el('div.lu-p.off', { text: x.slot.label + ' — удалён' })); return; }
         const p = x.p;
-        col.appendChild(el('div.lu-p', null, [el('span.lu-pos', { text: x.slot.label }), el('span.lu-n', null, [p.name + (p.m.goals ? ' ' + '⚽'.repeat(p.m.goals) : '') + (p.m.yc ? ' 🟨' : '') + ' ', UI.traitIcons(p)]), UI.fitBar(p.m.fit)]));
+        col.appendChild(el('div.lu-p', null, [el('span.lu-pos', { text: x.slot.label }), el('span.lu-n', null, [p.name + (p.m.goals ? ' ' + '⚽'.repeat(p.m.goals) : '') + (p.m.yc ? ' 🟨' : '') + ' ', UI.formBadge(p), ' ', UI.traitIcons(p)]), UI.fitBar(p.m.fit)]));
       });
       col.appendChild(el('div.lu-sub', { text: `Замен осталось: ${ts.subsLeft}` }));
       box.appendChild(col);

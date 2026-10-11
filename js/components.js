@@ -82,6 +82,14 @@
     return UI.modal({ title: `Особенности игроков (${Object.keys(G.TRAITS.LIST).length})`, content: box, wide: true, buttons: [{ text: 'Закрыть', cls: 'ghost' }] });
   };
 
+  /* Индикатор формы */
+  UI.formBadge = (p) => {
+    const b = TAC.formBonus(p);
+    const [ar, cls] = b >= 1.5 ? ['⇈', 'f2'] : b >= 0.5 ? ['↑', 'f1'] : b > -0.5 ? ['→', 'f0'] : b > -1.5 ? ['↓', 'fm1'] : ['⇊', 'fm2'];
+    const last = (p.lastR || []).slice(-5).map(r => r.toFixed(1)).join(', ');
+    return el('span.formb.' + cls, { text: ar, title: `Форма: ${TAC.formLabel(b)} (${b > 0 ? '+' : ''}${b.toFixed(1)} ко всем характеристикам)${last ? '\nПоследние оценки: ' + last : '\nЕщё не играл'}` });
+  };
+
   UI.attrCell = (v) => {
     const s = el('span.attr', { text: v });
     s.style.setProperty('--ac', U.attrColor(v));
@@ -124,6 +132,14 @@
       attrs.appendChild(el('div.pc-attr', { title: a.d }, [el('span', { text: a.n }), bar, UI.attrCell(v)]));
     }
     content.appendChild(attrs);
+    const fb = TAC.formBonus(p);
+    const fbox = el('div.pc-form', null, [el('span', { text: 'Форма' }), UI.formBadge(p), el('b', { text: `${TAC.formLabel(fb)} · ${fb > 0 ? '+' : ''}${fb.toFixed(1)} ко всем характеристикам в матче` })]);
+    const lr = el('div.pc-lastr', { title: 'Последние 5 оценок: слева старые, справа свежие. Свежие весят больше (5:4:3:2:1).' });
+    (p.lastR || []).slice(-5).forEach(r => lr.appendChild(el('i', { text: r.toFixed(1), style: { background: r >= 7.5 ? 'rgba(0,255,135,.25)' : r >= 6.5 ? 'rgba(231,214,74,.2)' : 'rgba(255,77,109,.22)' } })));
+    if (!lr.children.length) lr.appendChild(el('small', { text: 'нет сыгранных матчей' }));
+    fbox.appendChild(lr);
+    content.appendChild(fbox);
+    if (p.dev) content.appendChild(el('div.pc-dev', { text: `Прошлое межсезонье: ${p.dev.total > 0 ? '+' : ''}${p.dev.total} к характеристикам` + (p.dev.avg ? ` (ср. оценка ${p.dev.avg.toFixed(2)}, ${p.dev.apps} матчей)` : ' (мало игровой практики)') }));
     if (p.tr && p.tr.length) {
       content.appendChild(el('div.pc-trh', null, [el('span', { text: 'Особенности' }), el('button.btn.ghost.small', { text: 'Все особенности', onclick: () => UI.traitsGuide() })]));
       const tl = el('div.pc-traits');
@@ -179,7 +195,7 @@
             el('span.chip-num', { text: x.p.num, style: { background: model.club.c1, color: GFX.isLight(model.club.c1) ? '#111' : '#fff', borderColor: model.club.c2 } }),
             el('span.chip-name', { text: shortName(x.p.name), title: (x.p.tr || []).map(id => G.TRAITS.LIST[id].i + ' ' + G.TRAITS.LIST[id].n).join('\n') }),
             UI.traitIcons(x.p),
-            el('span.chip-meta', null, [el('b', { text: x.slot.label }), el('i', { text: r.toFixed(1), style: { color: U.attrColor(r) } })]),
+            el('span.chip-meta', null, [el('b', { text: x.slot.label }), el('i', { text: r.toFixed(1), style: { color: U.attrColor(r) } }), UI.formBadge(x.p)]),
             UI.fitBar(fit)
           );
           if (x.p.pos !== TAC.ROLES[x.slot.role].line) chip.classList.add('offpos');
@@ -227,7 +243,7 @@
       model.getBench().forEach(p => {
         const fit = p.m ? p.m.fit : p.fit;
         const b = el('button.bench-p' + (selected && selected.kind === 'bench' && selected.p === p ? '.sel' : ''), { onclick: () => clickBench(p) }, [
-          el('span.bp-pos', { text: UI.posShort(p.pos) }), el('span.bp-name', { text: p.name }), UI.traitIcons(p), el('span.bp-ovr', { text: UI.ovr(p).toFixed(1), style: { color: U.attrColor(UI.ovr(p)) } }), UI.fitBar(fit)
+          el('span.bp-pos', { text: UI.posShort(p.pos) }), el('span.bp-name', { text: p.name }), UI.traitIcons(p), UI.formBadge(p), el('span.bp-ovr', { text: UI.ovr(p).toFixed(1), style: { color: U.attrColor(UI.ovr(p)) } }), UI.fitBar(fit)
         ]);
         bl.appendChild(b);
       });

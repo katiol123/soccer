@@ -94,6 +94,11 @@
     if (bg.length) notes.push(`${ctx.strongOpp ? 'Против фаворита' : 'Против слабого'} ставка на ${bg.map(p => p.name).join(', ')} (${ctx.strongOpp ? '⭐ любит большие матчи' : '🐯 хорош против слабых'}).`);
     const benched = club.players.filter(p => TAC.available(p) && !best.xi.lineup.includes(p.id) && ((ctx.away && HAS(p, 'homeBird')) || (ctx.strongOpp && HAS(p, 'flatTrack'))) && TAC.overall(p) > myR);
     if (benched.length) notes.push(`${benched[0].name} начнёт в запасе: ${HAS(benched[0], 'homeBird') ? '🏠 в гостях он не тот' : '🐯 не тянет матчи с грандами'}.`);
+    // форма
+    const hot = xiP.filter(p => TAC.formBonus(p) >= 1.2).sort((a, b) => TAC.formBonus(b) - TAC.formBonus(a));
+    if (hot.length) notes.push(`${hot.slice(0, 2).map(p => `${p.name} (+${TAC.formBonus(p).toFixed(1)})`).join(', ')} в отличной форме — в старте.`);
+    const cold = club.players.filter(p => TAC.available(p) && !best.xi.lineup.includes(p.id) && TAC.formBonus(p) <= -1 && TAC.overall(p) > myR - 0.3);
+    if (cold.length) notes.push(`${cold[0].name} не в форме (${TAC.formBonus(cold[0]).toFixed(1)}) — начнёт в запасе.`);
     const pens = xiP.filter(p => HAS(p, 'penalty'));
     if (pens.length) notes.push(`Пенальти бьёт ⚽ ${pens[0].name}.`);
     // ротация

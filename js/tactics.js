@@ -79,6 +79,26 @@
   function available(p) { return p.inj <= 0 && p.susp <= 0; }
 
   /* Жадный подбор лучших 11 под схему с учётом свежести */
+  /* Форма: средняя оценка последних матчей (взвешенная) → бонус ко всем характеристикам от −2 до +2 */
+  const FORM_NEUTRAL = 6.45, FORM_STEP = 0.45;
+  function formBonus(p) {
+    const f = p.form == null ? FORM_NEUTRAL : p.form;
+    return Math.round(Math.max(-2, Math.min(2, (f - FORM_NEUTRAL) / FORM_STEP)) * 10) / 10;
+  }
+  /* Форма = взвешенная средняя последних 5 оценок (свежие важнее: 5,4,3,2,1).
+     Пока сыграно меньше 3 матчей, недостающие считаются нейтральными. */
+  const FORM_W = [5, 4, 3, 2, 1];
+  function computeForm(p) {
+    const r = (p.lastR || []).slice(-5).reverse();
+    let s = 0, w = 0;
+    r.forEach((v, i) => { s += v * FORM_W[i]; w += FORM_W[i]; });
+    for (let i = r.length; i < 3; i++) { s += FORM_NEUTRAL * FORM_W[i]; w += FORM_W[i]; }
+    return w ? s / w : FORM_NEUTRAL;
+  }
+  function formLabel(b) {
+    return b >= 1.5 ? 'Отличная' : b >= 0.5 ? 'Хорошая' : b > -0.5 ? 'Обычная' : b > -1.5 ? 'Плохая' : 'Ужасная';
+  }
+
   function bestXI(club, formation, opts) {
     opts = opts || {};
     const slots = FORMATIONS[formation];
@@ -89,7 +109,8 @@
       pool.forEach(p => {
         const fitF = 1 - fitW * (1 - (0.55 + 0.45 * p.fit / 100));
         const tv = G.TRAITS ? G.TRAITS.value(p, opts.ctx) : 0;
-        pairs.push({ si, p, v: (roleRating(p, s.role) + tv) * fitF });
+        const fb = opts.noForm ? 0 : formBonus(p) * lineSuit(p.pos, ROLES[s.role].line);
+        pairs.push({ si, p, v: (roleRating(p, s.role) + tv + fb) * fitF });
       });
     });
     pairs.sort((a, b) => b.v - a.v);
@@ -127,7 +148,7 @@
 
   function teamRating(club) {
     const f = club.coach && club.coach.formations ? club.coach.formations[0] : '4-4-2';
-    const xi = bestXI(club, f, { fitWeight: 0 });
+    const xi = bestXI(club, f, { fitWeight: 0, noForm: true });
     return lineupRating(club, f, xi.lineup);
   }
 
@@ -142,5 +163,5 @@
     };
   }
 
-  G.TAC = { ROLES, FORMATIONS, PLANS, MENTALITY, PRESSING, LINE, NAT_ROLES, lineSuit, roleRating, roleRatingRaw, overall, bestRole, bestXI, lineupRating, teamRating, defaultTactics, playerMap, available };
+  G.TAC = { ROLES, FORMATIONS, PLANS, MENTALITY, PRESSING, LINE, NAT_ROLES, lineSuit, roleRating, roleRatingRaw, overall, bestRole, bestXI, lineupRating, teamRating, defaultTactics, playerMap, available, formBonus, formLabel, computeForm, FORM_NEUTRAL };
 })(typeof window !== 'undefined' ? window : globalThis);

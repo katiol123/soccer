@@ -410,7 +410,7 @@
       }
       const map = TAC.playerMap(opp);
       const ol = el('div.pm-xi');
-      TAC.FORMATIONS[oppTac.formation].forEach((s, i) => { const p = map[oppTac.lineup[i]]; if (p) ol.appendChild(el('div.pm-p', null, [el('span.lu-pos', { text: s.label }), el('span', null, [p.name + ' ', UI.traitIcons(p)]), el('b', { text: TAC.roleRating(p, s.role).toFixed(1), style: { color: U.attrColor(TAC.roleRating(p, s.role)) } })])); });
+      TAC.FORMATIONS[oppTac.formation].forEach((s, i) => { const p = map[oppTac.lineup[i]]; if (p) ol.appendChild(el('div.pm-p', null, [el('span.lu-pos', { text: s.label }), el('span', null, [p.name + ' ', UI.formBadge(p), ' ', UI.traitIcons(p)]), el('b', { text: TAC.roleRating(p, s.role).toFixed(1), style: { color: U.attrColor(TAC.roleRating(p, s.role)) } })])); });
       theirs.appendChild(ol);
       body.append(mine, theirs);
       root.appendChild(body);
@@ -626,10 +626,10 @@
 
     squadTable(club) {
       const card = el('div.card.wide-card', null, [el('h3', { text: `Состав «${club.name}»` })]);
-      const cols = [['pos', 'Поз'], ['name', 'Игрок'], ['age', 'Воз']].concat(G.DATA.ATTRS.map(a => [a.k, a.n.slice(0, 3)])).concat([['ref', 'Реф'], ['ovr', 'Рейт'], ['fit', 'Свеж'], ['apps', 'И'], ['goals', 'Г'], ['rat', 'Оц']]);
+      const cols = [['pos', 'Поз'], ['name', 'Игрок'], ['age', 'Воз']].concat(G.DATA.ATTRS.map(a => [a.k, a.n.slice(0, 3)])).concat([['ref', 'Реф'], ['ovr', 'Рейт'], ['form', 'Форма'], ['fit', 'Свеж'], ['apps', 'И'], ['goals', 'Г'], ['rat', 'Оц']]);
       let sortK = 'pos', dir = 1;
       const order = { GK: 0, DF: 1, MF: 2, FW: 3 };
-      const get = (p, k) => k === 'pos' ? order[p.pos] * 100 - TAC.overall(p) : k === 'name' ? p.name : k === 'age' ? p.age : k === 'ovr' ? TAC.overall(p) : k === 'fit' ? p.fit : k === 'apps' ? p.st.apps : k === 'goals' ? p.st.goals : k === 'rat' ? (p.st.apps ? p.st.rsum / p.st.apps : 0) : p.a[k];
+      const get = (p, k) => k === 'pos' ? order[p.pos] * 100 - TAC.overall(p) : k === 'name' ? p.name : k === 'age' ? p.age : k === 'ovr' ? TAC.overall(p) : k === 'fit' ? p.fit : k === 'form' ? TAC.formBonus(p) : k === 'apps' ? p.st.apps : k === 'goals' ? p.st.goals : k === 'rat' ? (p.st.apps ? p.st.rsum / p.st.apps : 0) : p.a[k];
       const tblWrap = el('div.table-scroll');
       const render = () => {
         const tbl = el('table.squad');
@@ -644,6 +644,7 @@
           tr.appendChild(el('td', null, [p.pos === 'GK' ? UI.attrCell(p.a.ref) : el('span.muted', { text: '–' })]));
           const o = TAC.overall(p);
           tr.appendChild(el('td', null, [el('b', { text: o.toFixed(1), style: { color: U.attrColor(o) } })]));
+          tr.appendChild(el('td', null, [UI.formBadge(p)]));
           tr.appendChild(el('td', null, [UI.fitBar(p.fit)]));
           tr.appendChild(el('td', { text: p.st.apps }));
           tr.appendChild(el('td', { text: p.st.goals }));
@@ -685,6 +686,8 @@
         el('p', { text: 'Поле делится на 5 зон. Темп атаки перемещает мяч к штрафной соперника; в штрафной темп превращается в «угрозу» — при 60+ удар наносится автоматически. Обороняющиеся копят прессинг (100 = отбор и шанс контратаки) и щит. Фолы приводят к штрафным, пенальти (вы выбираете угол!) и карточкам; удары — к угловым.' }),
         el('h4', { text: 'Характеристики и тактика' }),
         el('p', { text: 'У игроков 8 характеристик (1–20): Удар, Пас, Дриблинг, Скорость, Отбор, Позиция, Выносливость, Хладнокровие (+ Рефлексы у вратарей). В обороне у своих ворот работают защитники, в центре — полузащитники, у чужих ворот — нападающие: схема определяет, кто и где участвует. Усталость снижает все характеристики — делайте замены. План на игру, менталитет, прессинг и линия обороны меняют силу каждого цвета.' }),
+        el('h4', { text: 'Форма и развитие' }),
+        el('p', { text: 'Форма — взвешенная средняя оценок за 5 последних матчей (последний важнее всего). Отличная форма даёт до +2 ко всем характеристикам в матче, ужасная — до −2. Стрелки ⇈ ↑ → ↓ ⇊ видны в составе и на схеме; тренеры-ИИ и автосостав учитывают форму. В межсезонье характеристики меняются в зависимости от возраста, средней оценки (выше 7.0 — сильнее растут или медленнее стареют, ниже 6.3 — наоборот) и игровой практики.' }),
         el('h4', { text: 'Особенности игроков' }),
         el('p', null, [`У игроков есть особенности (всего ${Object.keys(G.TRAITS.LIST).length}): «Спорит с судьями», «Бьёт при первой возможности», «Передерживает мяч», «Решает в концовке», «Хрупкий» и другие. Они срабатывают, пока игрок на поле, и меняют силу блоков, удары, фолы, карточки, усталость и травмы. Значки видны в составе и на схеме — наведите на значок, чтобы прочитать эффект. `, el('button.btn.ghost.small', { text: 'Все особенности', onclick: () => UI.traitsGuide() })]),
         el('p', { text: 'Тренеры-ИИ выбирают схему и план исходя из своих предпочтений, состава и силы соперника, а по ходу матча реагируют на счёт, усталость и удаления.' })
