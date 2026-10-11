@@ -166,6 +166,8 @@
       if (UI.renewHook && UI.renewHook.can(p, club)) fr.appendChild(el('button.btn.small.primary', { text: '✍ Продлить контракт', onclick: () => { md.close(); UI.renewHook.open(p, club); } }));
       content.appendChild(fr);
       if (UI.renewHook && UI.renewHook.own && UI.renewHook.own(club)) {
+        if (p.age <= 23 && G.CAR) content.appendChild(el('div.pc-form', null, [el('span', { text: 'Потенциал (оценка штаба)' }), el('b.pot', { text: '★'.repeat(G.CAR.potStars(p)) + '☆'.repeat(5 - G.CAR.potStars(p)) }), el('small.muted', { text: p.academy === club.id ? '🎓 воспитанник академии' : '' })]));
+        if (p.retiring) content.appendChild(el('div.pc-warn', { text: '👴 Объявил о завершении карьеры по окончании сезона.' }));
         const sn = G.FIN.staffNotes(p);
         if (sn.length) content.appendChild(el('div.agent', null, [el('small', { text: 'Мнение тренерского штаба' })].concat(sn.map(t => el('div', { text: '🗒 ' + t })))));
       }

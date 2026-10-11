@@ -246,27 +246,10 @@
       b.conf = U.clamp(b.conf + delta * 4, 5, 100);
       st.news.push({ r: 0, text: `🏛 Совет директоров ${verdict}: цель — ${b.target}-е место, итог — ${pos}-е. Доверие ${Math.round(b.conf)}%.` });
     }
-    // контракты: ИИ-клубы продлевают нужных, клуб игрока теряет непродлённых
-    st.clubs.forEach(c => {
-      const leaving = [];
-      c.players.forEach(p => {
-        p.contract = (p.contract || 1) - 1;
-        if (p.contract > 0) return;
-        if (c.id === st.userClub) leaving.push(p);
-        else { const d = demand(st, p, c); p.wage = d.wage; p.contract = U.randInt(d.years[0], d.years[1]); }
-      });
-      if (leaving.length) {
-        c.players = c.players.filter(p => !leaving.includes(p));
-        delete c._map;
-        const names = leaving.map(p => p.name);
-        report.push(`👋 Контракты истекли, клуб покидают: ${names.join(', ')}.`);
-        // до открытия трансферного рынка место ушедших занимают выпускники академии
-        const used = new Set(); st.clubs.forEach(x => x.players.forEach(p => used.add(p.name)));
-        const academy = leaving.map(p => youth(st, c, p.pos, used));
-        report.push(`🎓 Из академии в основную команду переведены: ${academy.map(p => `${p.name} (${p.pos === 'GK' ? 'ВР' : p.pos === 'DF' ? 'ЗЩ' : p.pos === 'MF' ? 'ПЗ' : 'НП'}, ${p.age})`).join(', ')}.`);
-      }
-    });
+    // контракты: ИИ-клубы продлевают нужных, непродлённые становятся свободными агентами
+    G.CAR.contractsEnd(st, report);
     report.forEach(t => st.news.push({ r: 0, text: t }));
+    G.CAR.checkUser(st, true);
   }
 
   function youth(st, club, pos, used) {

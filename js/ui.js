@@ -19,7 +19,7 @@
         open: (p, club) => this.renewModal(p, club)
       };
       UI.buyHook = {
-        can: (p, club) => this.st && this.st.userClub && club.id !== this.st.userClub && G.TR.windowState(this.st).open,
+        can: (p, club) => this.st && this.st.userClub && !!club.players && club.id !== this.st.userClub && G.TR.windowState(this.st).open,
         open: (p) => this.buyModal(p.id)
       };
       try { SFX.on = localStorage.getItem('m3-sound') !== 'off'; } catch (e) { /* */ }
@@ -162,6 +162,7 @@
       const st = this.st;
       if (LEAGUE.seasonOver(st)) return this.seasonEnd();
       const root = el('div.screen.hub');
+      if (st.sacked && st.userClub) setTimeout(() => this.sackModal(), 300);
       const uc = st.userClub ? LEAGUE.club(st, st.userClub) : null;
       if (uc) { root.style.setProperty('--c1', uc.c1); root.style.setProperty('--c2', uc.c2); }
       const nav = el('nav.hub-nav');
@@ -634,7 +635,7 @@
         kpi('Состав', `${me.players.length} / ${G.TR.MAX_SQUAD}`, 'максимум игроков в заявке')
       ]));
       const tabs = el('div.seg.tr-tabs');
-      [['search', 'Поиск'], ['offers', `Предложения${m.offers.length ? ' (' + m.offers.length + ')' : ''}`], ['sell', 'Продажа'], ['loans', 'Аренды'], ['short', `Избранное${m.short.length ? ' (' + m.short.length + ')' : ''}`], ['history', 'История']].forEach(([k, n]) => tabs.appendChild(el('button' + (this.trTab === k ? '.on' : ''), { text: n, onclick: () => { this.trTab = k; this.hub('transfers'); } })));
+      [['search', 'Поиск'], ['free', 'Свободные агенты'], ['offers', `Предложения${m.offers.length ? ' (' + m.offers.length + ')' : ''}`], ['sell', 'Продажа'], ['loans', 'Аренды'], ['short', `Избранное${m.short.length ? ' (' + m.short.length + ')' : ''}`], ['history', 'История']].forEach(([k, n]) => tabs.appendChild(el('button' + (this.trTab === k ? '.on' : ''), { text: n, onclick: () => { this.trTab = k; this.hub('transfers'); } })));
       wrap.appendChild(tabs);
       const card = el('div.card.wide-card');
       if (this.trTab === 'search') this.trSearch(card);
@@ -642,6 +643,7 @@
       else if (this.trTab === 'offers') this.trOffers(card);
       else if (this.trTab === 'sell') this.trSell(card);
       else if (this.trTab === 'loans') this.trLoans(card);
+      else if (this.trTab === 'free') this.trFree(card);
       else this.trHistory(card);
       wrap.appendChild(card);
       body.appendChild(wrap);
@@ -754,12 +756,79 @@
       card.appendChild(el('h3', { text: 'История трансферов' }));
       if (!m.history.length) { card.appendChild(el('div.muted', { text: 'Сделок пока не было.' })); return; }
       m.history.slice().reverse().forEach(h => {
-        const a = LEAGUE.club(st, h.from), b = h.to ? LEAGUE.club(st, h.to) : null;
+        const a = h.from ? LEAGUE.club(st, h.from) : null, b = h.to ? LEAGUE.club(st, h.to) : null;
+        if (!a && b) { card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, тур ${h.round}` }), el('b', { text: h.name }), el('span', null, ['свободный агент → ', UI.crest(b, 18), ` ${b.short}`]), el('b.loan-tag', { text: 'бесплатно' })])); return; }
+        if (!a) return;
         if (!b) { card.appendChild(el('div.hist-row', null, [el('small', { text: `${h.season}, тур ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ` ${a.short} → свободный агент`]), el('b', { text: '—' })])); return; }
         const mine = h.to === st.userClub ? 'in' : h.from === st.userClub ? 'out' : '';
         if (h.loan) { card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, тур ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ` ${a.short} → `, UI.crest(b, 18), ` ${b.short}`]), el('b.loan-tag', { text: 'аренда' + (h.fee ? ' · ' + G.FIN.fmtM(h.fee) : '') })])); return; }
         card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, тур ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ` ${a.short} → `, UI.crest(b, 18), ` ${b.short}`]), el('b', { text: G.FIN.fmtM(h.fee) })]));
       });
+    },
+
+    /* ---------- Свободные агенты ---------- */
+    trFree(card) {
+      const st = this.st, CAR = G.CAR, fa = CAR.pool(st);
+      card.appendChild(el('h3', { text: `Свободные агенты (${fa.length})` }));
+      card.appendChild(el('div.muted.small-note', { text: 'Игроки без клуба: не продлили контракт или были отчислены. Подписать можно в любое время, без платы за трансфер. Чем дольше игрок без клуба, тем скромнее его требования. Ветераны 34+ без клуба завершают карьеру летом.' }));
+      if (!fa.length) { card.appendChild(el('div.muted', { text: 'Сейчас свободных агентов нет.' })); return; }
+      const tbl = el('table.squad');
+      tbl.appendChild(el('thead', null, [el('tr', null, ['Поз', 'Игрок', 'Воз', 'Рейт', 'Стоимость', 'Просит', 'Без клуба', ''].map(t => el('th', { text: t })))]));
+      const tb = el('tbody');
+      fa.slice().sort((a, b) => TAC.overall(b) - TAC.overall(a)).forEach(p => {
+        const d = CAR.faDemand(st, p);
+        tb.appendChild(el('tr', { onclick: () => UI.playerModal(p, { id: '_fa', name: 'Свободный агент', c1: '#444', c2: '#888', short: 'FA' }) }, [
+          el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]), el('td.pname', null, [p.name + ' ', UI.traitIcons(p)]), el('td', { text: p.age }),
+          el('td', null, [el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })]),
+          el('td', { text: G.FIN.fmtM(G.FIN.value(p)) }), el('td', { text: G.FIN.fmtW(d.wage) }), el('td', { text: `${d.idle} ${U.plural(d.idle, 'тур', 'тура', 'туров')}` }),
+          el('td', null, [el('button.btn.small.primary', { text: 'Подписать', onclick: (e) => { e.stopPropagation(); this.faModal(p.id); } })])
+        ]));
+      });
+      tbl.appendChild(tb);
+      card.appendChild(el('div.table-scroll', null, [tbl]));
+    },
+
+    faModal(pid) {
+      const st = this.st, CAR = G.CAR, p = CAR.pool(st).find(x => x.id === pid);
+      if (!p) return;
+      const d = CAR.faDemand(st, p), me = LEAGUE.club(st, st.userClub);
+      const state = { wage: d.wage, years: d.years[0] };
+      const wv = el('b'), msg = el('div.renew-hint');
+      const upd = () => { wv.textContent = `${G.FIN.fmtW(state.wage)} · ведомость ${G.FIN.wageBill(me) + state.wage} / ${me.fin.wageBudget}`; };
+      const slider = el('input', { type: 'range', min: Math.round(d.wage * 0.7), max: Math.round(d.wage * 1.3), step: 1, value: d.wage, oninput: (e) => { state.wage = +e.target.value; upd(); } });
+      const yrs = el('div.seg');
+      [1, 2, 3, 4].forEach(y => yrs.appendChild(el('button' + (y === state.years ? '.on' : ''), { text: y + ' ' + U.plural(y, 'год', 'года', 'лет'), onclick: (e) => { state.years = y; U.$$('button', yrs).forEach(b => b.classList.remove('on')); e.target.classList.add('on'); } })));
+      upd();
+      const content = el('div.renew', null, [
+        el('div.pc-head', null, [el('div', null, [el('div.pc-name', { text: p.name }), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · свободный агент ${d.idle} ${U.plural(d.idle, 'тур', 'тура', 'туров')}` })])]),
+        el('div.agent', null, [el('div', { text: `💬 Агент: «Он просит ${G.FIN.fmtW(d.wage)}, контракт на ${d.years[0]}–${d.years[1]} ${U.plural(d.years[1], 'год', 'года', 'лет')}».` })]),
+        el('div.renew-row', null, [el('span', { text: 'Зарплата' }), slider, wv]), el('div.renew-row', null, [el('span', { text: 'Срок' }), yrs]), msg,
+        el('div.renew-btns', null, [el('button.btn.primary', { text: 'Подписать контракт', onclick: () => { const r = CAR.signFree(st, st.userClub, pid, state.wage, state.years); if (r.ok) { md.close(); UI.toast(r.msg); st.news.push({ r: st.round, text: '✍ ' + r.msg }); LEAGUE.save(st); this.hub('transfers'); } else msg.textContent = r.msg; } })])
+      ]);
+      const md = UI.modal({ title: 'Свободный агент', content, buttons: [{ text: 'Закрыть', cls: 'ghost' }] });
+    },
+
+    /* ---------- Увольнение ---------- */
+    sackModal() {
+      const st = this.st, CAR = G.CAR;
+      if (!st.sacked || document.querySelector('.modal.sack')) return;
+      const old = LEAGUE.club(st, st.sacked.club);
+      const offers = CAR.jobOffers(st);
+      const content = el('div.sack-box', null, [
+        el('div.se-trophy', { text: '📉' }),
+        el('p.lead', { text: `Совет директоров «${old.name}» принял решение расторгнуть с вами контракт. Доверие упало до ${st.sacked.conf}%.` }),
+        el('h4', { text: 'Вам поступили предложения' })
+      ]);
+      offers.forEach(c => {
+        const recent = st.sacks && st.sacks[c.id + '@' + st.season];
+        const pos = LEAGUE.standings(st).findIndex(r => r.id === c.id) + 1;
+        content.appendChild(el('div.offer', null, [UI.crest(c, 40), el('div.offer-t', null, [el('b', { text: c.name }), el('small', { text: `${pos}-е место · цель совета: ${c.fin.target}-е · бюджет ${G.FIN.fmtM(c.fin.transferBudget || 0)}${recent ? ' · только что уволили тренера' : ''}` })]),
+          el('div.offer-act', null, [el('button.btn.small.primary', { text: 'Возглавить', onclick: () => { CAR.takeJob(st, c.id); LEAGUE.save(st); md.close(); this.hub('home'); UI.toast(`Вы — новый тренер «${c.name}»!`); } })])]));
+      });
+      const md = UI.modal({ title: 'Вы уволены', cls: 'sack', content, closable: false, buttons: [
+        { text: 'Продолжить в режиме зрителя', cls: 'ghost', onClick: () => { CAR.toSpectator(st); LEAGUE.save(st); setTimeout(() => this.hub('home'), 50); } },
+        { text: 'Главное меню', cls: 'ghost', onClick: () => { LEAGUE.save(st); setTimeout(() => this.menu(), 50); } }
+      ] });
     },
 
     /* ---------- Аренды ---------- */
@@ -1029,7 +1098,8 @@
           el('td', null, [el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })]), el('td', null, [UI.formBadge(p)]), el('td', { text: G.FIN.moodLabel(p.mood == null ? 60 : p.mood)[1], title: G.FIN.moodLabel(p.mood == null ? 60 : p.mood)[0] }),
           el('td', { text: G.FIN.fmtM(G.FIN.value(p)) }), el('td', { text: G.FIN.fmtW(p.wage) }),
           el('td' + (p.contract <= 1 ? '.ctr-warn' : ''), { text: p.contract <= 1 ? 'истекает летом' : `${p.contract} ${U.plural(p.contract, 'сезон', 'сезона', 'сезонов')}` }),
-          el('td', null, [own && p.contract <= 2 && !p.loan ? el('button.btn.small', { text: 'Продлить', onclick: (e) => { e.stopPropagation(); this.renewModal(p, club); } }) : null])
+          el('td.tr-btns', null, [own && p.contract <= 2 && !p.loan ? el('button.btn.small', { text: 'Продлить', onclick: (e) => { e.stopPropagation(); this.renewModal(p, club); } }) : null,
+            own && !p.loan ? el('button.btn.small.ghost', { text: 'Отчислить', title: 'Расторгнуть контракт', onclick: (e) => { e.stopPropagation(); this.releaseModal(p); } }) : null])
         ]);
         tb.appendChild(tr);
       });
@@ -1080,6 +1150,15 @@
         if (r.ok) st.news.push({ r: st.round, text: '✍ ' + r.msg });
         LEAGUE.save(st);
         this.hub(this.tab);
+      });
+    },
+
+    releaseModal(p) {
+      const st = this.st, cost = G.CAR.releaseCost(p);
+      UI.modal({ title: 'Расторгнуть контракт?', content: el('p', { text: `${p.name} станет свободным агентом. Компенсация — 50% оставшегося контракта: ${G.FIN.fmtM(cost)}.` }), buttons: [{ text: 'Отмена', cls: 'ghost', value: false }, { text: 'Отчислить', cls: 'primary', value: true }] }).result.then(v => {
+        if (!v) return;
+        const r = G.CAR.userRelease(st, p.id);
+        UI.toast(r.msg, r.ok ? '' : 'warn'); LEAGUE.save(st); this.hub(this.tab);
       });
     },
 
@@ -1159,7 +1238,7 @@
         club.players.slice().sort((a, b) => { const x = get(a, sortK), y = get(b, sortK); return (x > y ? 1 : x < y ? -1 : 0) * dir; }).forEach(p => {
           const tr = el('tr' + (TAC.available(p) ? '' : '.unavail'), { onclick: () => UI.playerModal(p, club) });
           tr.appendChild(el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]));
-          tr.appendChild(el('td.pname', null, [p.name + (p.star ? ' ★' : '') + (p.inj > 0 ? ' ✚' : '') + (p.susp > 0 ? ' 🟥' : '') + (p.loan ? ' 🤝' : '') + ' ', UI.traitIcons(p)]));
+          tr.appendChild(el('td.pname', null, [p.name + (p.star ? ' ★' : '') + (p.inj > 0 ? ' ✚' : '') + (p.susp > 0 ? ' 🟥' : '') + (p.loan ? ' 🤝' : '') + (p.academy === club.id ? ' 🎓' : '') + (p.retiring ? ' 👴' : '') + ' ', UI.traitIcons(p)]));
           tr.appendChild(el('td', { text: p.age }));
           G.DATA.ATTRS.forEach(a => tr.appendChild(el('td', null, [UI.attrCell(p.a[a.k])])));
           tr.appendChild(el('td', null, [p.pos === 'GK' ? UI.attrCell(p.a.ref) : el('span.muted', { text: '–' })]));
@@ -1218,6 +1297,8 @@
         el('h4', { text: 'Трансферы' }),
         el('p', { text: 'Летнее окно открыто перед сезоном и до 3-го тура, зимнее — с 19-го по 21-й тур. Покупка идёт в два шага: сначала договоритесь с клубом о сумме (он может принять, назвать свою цену или отказать; ключевые игроки топ-клубов не продаются), затем — с игроком о зарплате и сроке: амбициозные просят больше и не хотят в клуб скромнее, преданные не хотят уходить из своего. Трансферный бюджет выделяет совет директоров, 70% от продаж возвращается в него. Выставляйте игроков на трансфер — клубы будут присылать предложения; недовольные игроки сами просят о трансфере. Клубы-ИИ торгуют и между собой: закрывают слабые позиции и ищут игроков под идею тренера.' }),
         el('p', { text: 'Аренды: отдайте молодого или лишнего игрока в другой клуб (вкладка «Продажа» → «В аренду»), задав гарантии игрового времени, долю зарплаты и опцию выкупа; или арендуйте игрока сами (кнопка «Аренда» в поиске). Практика в аренде ускоряет развитие в межсезонье. Не выполните обещание игрового времени — зимой клуб-владелец отзовёт игрока. В конце сезона арендованные возвращаются домой.' }),
+        el('h4', { text: 'Академия, ветераны, свободные агенты, увольнение' }),
+        el('p', { text: 'Каждое лето академия выпускает 2–3 молодых игроков 🎓; их скрытый потенциал (штаб оценивает его звёздами) определяет, как быстро они будут расти. Ветераны 33+ ближе к концу сезона объявляют о завершении карьеры 👴. Игроки без продлённого контракта и отчисленные становятся свободными агентами — их можно подписать в любое время без платы за трансфер. Клубы-ИИ увольняют неудачливых тренеров; вас уволят, если доверие совета упадёт слишком низко (ниже 12% по ходу сезона или ниже 20% по его итогам) — тогда можно принять предложение другого клуба.' }),
         el('h4', { text: 'Особенности игроков' }),
         el('p', null, [`У игроков есть особенности (всего ${Object.keys(G.TRAITS.LIST).length}): «Спорит с судьями», «Бьёт при первой возможности», «Передерживает мяч», «Решает в концовке», «Хрупкий» и другие. Они срабатывают, пока игрок на поле, и меняют силу блоков, удары, фолы, карточки, усталость и травмы. Значки видны в составе и на схеме — наведите на значок, чтобы прочитать эффект. `, el('button.btn.ghost.small', { text: 'Все особенности', onclick: () => UI.traitsGuide() })]),
         el('p', { text: 'Тренеры-ИИ выбирают схему и план исходя из своих предпочтений, состава и силы соперника, а по ходу матча реагируют на счёт, усталость и удаления. В перерыве, на 60-й и 75-й минутах тренер разбирает игру: если команду душат прессингом, техничный состав переходит на «Владение», а слабый технически — на «Прямой футбол»; против низкого блока идёт через фланги или бьёт издали, против высокой линии — на рывки за спину; опускает линию против быстрых нападающих, снижает прессинг при усталости и карточках, добавляет полузащитника, если проигрывает центр.'})

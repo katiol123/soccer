@@ -178,12 +178,7 @@
     // ИИ-клуб, оставшийся без игроков на позиции, подписывает свободного агента
     for (const c of [from, to]) {
       if (c.id === st.userClub) continue;
-      const pos = p.pos;
-      if (posCount(c, pos) < MIN_POS[pos]) {
-        const used = new Set(); st.clubs.forEach(x => x.players.forEach(y => used.add(y.name)));
-        const fa = G.DATA.makePlayer(c, pos, c.str - 1, U.randInt(22, 31), Math.random, used, c.id + '_fa' + Math.floor(Math.random() * 1e7), freeNumber(c), false);
-        fa.contract = 2; fa.wage = Math.round(F.fairWage(fa)); c.players.push(fa); delete c._map;
-      }
+      if (posCount(c, p.pos) < MIN_POS[p.pos]) G.CAR.takeFromPool(st, c, p.pos);
     }
     if (G.LEAGUE && st.userClub) G.LEAGUE.fixUserTactics(st);
   }
@@ -342,11 +337,9 @@
   /* Переполненный состав: отчисляем слабейших «лишних» */
   function trimSquad(st, c) {
     while (c.players.length > 28) {
-      const surplus = c.players.filter(p => posCount(c, p.pos) > MIN_POS[p.pos] + 1).sort((a, b) => TAC.overall(a) - TAC.overall(b));
+      const surplus = c.players.filter(p => !p.loan && posCount(c, p.pos) > MIN_POS[p.pos] + 1).sort((a, b) => TAC.overall(a) - TAC.overall(b));
       if (!surplus.length) break;
-      const p = surplus[0];
-      c.players = c.players.filter(x => x !== p); delete c._map;
-      market(st).history.push({ season: st.seasonName, round: st.round + 1, pid: p.id, name: p.name, from: c.id, to: null, fee: 0 });
+      G.CAR.release(st, c, surplus[0], 'trim');
     }
   }
 

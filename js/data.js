@@ -136,6 +136,7 @@
     };
     pl.tr = G.TRAITS ? G.TRAITS.roll(pl, rng) : [];
     rollHidden(pl, rng);
+    if (G.CAR) G.CAR.rollPot(pl, rng);
     return pl;
   }
 

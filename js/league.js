@@ -53,6 +53,7 @@
       st.news.push({ r: 0, text: `Вы возглавили «${c.name}». Совет директоров ждёт результата!` });
     }
     G.FIN.init(st);
+    G.CAR.ensure(st);
     return st;
   }
 
@@ -121,6 +122,7 @@
     G.FIN.round(st);
     st.round++;
     if (G.TR) G.TR.afterRound(st);
+    G.CAR.afterRound(st);
     if (st.userClub) fixUserTactics(st);
   }
 
@@ -157,6 +159,7 @@
     st.history = st.history || [];
     st.history.push({ season: st.seasonName, champion: table[0].id, user: st.userClub ? table.findIndex(r => r.id === st.userClub) + 1 : null });
     if (G.TR) G.TR.endLoans(st);
+    G.CAR.retire(st);
     G.FIN.seasonEnd(st, table);
     st.season++;
     const y = 2024 + st.season;
@@ -179,6 +182,9 @@
     const down = pool.filter(x => x.d.total < 0).sort((a, b) => a.d.total - b.d.total).slice(0, 3);
     if (up.length) st.news.push({ r: 0, text: '📈 Прогресс за межсезонье: ' + up.map(x => `${x.p.name} (+${x.d.total}${x.d.avg ? ', ср. ' + x.d.avg.toFixed(2) : ''})`).join(', ') + '.' });
     if (down.length) st.news.push({ r: 0, text: '📉 Сдали: ' + down.map(x => `${x.p.name} (${x.d.total}${x.d.avg ? ', ср. ' + x.d.avg.toFixed(2) : ''})`).join(', ') + '.' });
+    G.CAR.academy(st);
+    G.CAR.aiFree(st, true);
+    G.CAR.trimAI(st);
     G.FIN.seasonStart(st);
     if (G.TR) { const m = G.TR.market(st); m.neg = {}; m.offers = []; G.TR.afterRound(st); }
     if (st.userClub) fixUserTactics(st);
@@ -191,8 +197,11 @@
     const play = U.clamp(apps / 19, 0.25, 1);
     const pro = p.h ? p.h.pro : 10;
     const loanK = p.loanExp >= 15 ? 1.25 : p.loanExp >= 8 ? 1.1 : 1; // практика в аренде ускоряет рост
+    // потенциал: чем больше запас до потолка, тем быстрее растут молодые
+    const head = (p.pot == null ? TAC.overall(p) + 2 : p.pot) - TAC.overall(p);
+    const potK = p.age <= 24 ? U.clamp(0.5 + head * 0.15, 0.35, 1.6) : 1;
     p.loanExp = 0;
-    const perfK = { good: 1.5, ok: 1, bad: 0.55, few: 0.8 }[grade] * (0.8 + pro * 0.02) * loanK;
+    const perfK = { good: 1.5, ok: 1, bad: 0.55, few: 0.8 }[grade] * (0.8 + pro * 0.02) * loanK * potK;
     let total = 0;
     for (const k in p.a) {
       if (k === 'ref' && p.pos !== 'GK') continue;
@@ -238,6 +247,7 @@
       if (G.TRAITS) G.TRAITS.ensure(st.clubs);
       st.clubs.forEach(c => c.players.forEach(p => { if (!p.lastR) { p.lastR = []; p.form = TAC.computeForm(p); } }));
       G.FIN.init(st);
+      G.CAR.ensure(st);
       return st;
     } catch (e) { return null; }
   }
