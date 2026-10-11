@@ -148,6 +148,7 @@
     const c1 = club.c1, c2 = club.c2;
     switch (club.pat) {
       case 'stripes': for (let x = 12; x < 100; x += 20) pat += `<rect x="${x}" y="0" width="10" height="104" fill="${c2}"/>`; break;
+      case 'hoops': for (let y = 14; y < 104; y += 22) pat += `<rect x="0" y="${y}" width="100" height="10" fill="${c2}"/>`; break;
       case 'half': pat = `<rect x="50" y="0" width="50" height="104" fill="${c2}"/>`; break;
       case 'sleeve': pat = `<rect x="0" y="0" width="100" height="30" fill="${c2}"/>`; break;
       case 'band': pat = `<rect x="0" y="72" width="100" height="14" fill="${c2}"/><rect x="0" y="16" width="100" height="6" fill="${c2}"/>`; break;

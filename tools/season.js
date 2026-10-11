@@ -23,13 +23,13 @@ for (let s = 0; s < N; s++) {
   }
   const sum = LEAGUE.seasonSummary(st);
   console.log('Повышение:', sum.promoted.map(x => LEAGUE.club(st, x.id).name).join(', '), '| плей-офф:', sum.playoff && LEAGUE.club(st, sum.playoff).name, '| вылет:', sum.relegated.map(x => LEAGUE.club(st, x.id).name).join(', '));
-  const po = st.leagues.eng2.fixtures.slice(-2).flat().map(f => `${LEAGUE.club(st, f.h).short} ${f.res.hs}:${f.res.as}${f.res.pen ? ' пен.' + f.res.pen : ''} ${LEAGUE.club(st, f.a).short}`);
+  const po = ['eng2', 'eng3'].filter(l => st.leagues[l]).flatMap(l => st.leagues[l].fixtures.slice(-2).flat()).map(f => `${LEAGUE.club(st, f.h).short} ${f.res.hs}:${f.res.as}${f.res.pen ? ' пен.' + f.res.pen : ''} ${LEAGUE.club(st, f.a).short}`);
   console.log('Плей-офф:', po.join(', '));
   LEAGUE.newSeason(st);
   const prof = lid => { const cs = LEAGUE.leagueClubs(st, lid); return cs.map(c => c.fin.last.profit); };
   for (const lid of LEAGUE.leagueIds(st)) { const p = st.clubs.filter(c => c.fin.last && LEAGUE.tier(c)).map(c => c); void p; }
   st.clubs.forEach(c => { if (c.fin.para) console.log('  парашют', c.name, c.league, JSON.stringify(c.fin.para)); });
   const L = st.clubs.map(c => ({ n: c.name, lg: c.league, pr: c.fin.last.profit, tv: c.fin.last.tv, w: c.fin.last.wages }));
-  ['eng1', 'eng2'].forEach(lid => { const x = L.filter(r => r.lg === lid).map(r => r.pr); console.log(lid, 'прибыль прошл. сезона (по новой лиге): мин', Math.min(...x).toFixed(0), 'ср', (x.reduce((a, b) => a + b, 0) / x.length).toFixed(1), 'макс', Math.max(...x).toFixed(0)); });
+  LEAGUE.leagueIds(st).forEach(lid => { const x = L.filter(r => r.lg === lid).map(r => r.pr); console.log(lid, 'прибыль прошл. сезона (по новой лиге): мин', Math.min(...x).toFixed(0), 'ср', (x.reduce((a, b) => a + b, 0) / x.length).toFixed(1), 'макс', Math.max(...x).toFixed(0)); });
   console.log('Свободных агентов:', st.fa.length, '| трансферов в истории:', st.market ? st.market.history.length : 0);
 }

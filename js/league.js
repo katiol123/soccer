@@ -58,6 +58,8 @@
   function leagueInfo(st, lid) { const L = DATA.LEAGUES[lid || st.lg]; return L || { id: lid, name: 'Лига', short: '', flag: '' }; }
   function leagueIds(st) { return DATA.LEAGUE_ORDER.filter(id => st.leagues[id]).concat(Object.keys(st.leagues).filter(id => !DATA.LEAGUE_ORDER.includes(id))); }
   function tier(c) { const L = DATA.LEAGUES[c.league]; return L ? L.tier : 1; }
+  /* Лига дивизионом выше */
+  function above(lid) { const i = DATA.LEAGUE_ORDER.indexOf(lid); return i > 0 ? DATA.LEAGUES[DATA.LEAGUE_ORDER[i - 1]] : null; }
 
   /* ---------- календарь: общая шкала недель ---------- */
   /* Все лиги живут на одной шкале недель. Самая длинная лига играет каждую неделю,
@@ -139,14 +141,14 @@
       if (st.round === W - 2 && !fx[W - 2].length) {
         const t = standings(st, lid), s = i => t[i - 1].id;
         fx[W - 2] = [{ h: s(3), a: s(6), po: 'semi', res: null }, { h: s(4), a: s(5), po: 'semi', res: null }];
-        st.news.push({ r: st.round, text: `🎟 Плей-офф ${L.name}: ${club(st, s(3)).name} — ${club(st, s(6)).name}, ${club(st, s(4)).name} — ${club(st, s(5)).name}. Победитель финала выходит в ${DATA.LEAGUES.eng1.acc}!` });
+        st.news.push({ r: st.round, text: `🎟 Плей-офф ${L.name}: ${club(st, s(3)).name} — ${club(st, s(6)).name}, ${club(st, s(4)).name} — ${club(st, s(5)).name}. Победитель финала выходит в ${(above(lid) || L).acc}!` });
       }
       if (st.round === W - 1 && !fx[W - 1].length && fx[W - 2].length) {
         const [a, b] = fx[W - 2].map(winner);
         const t = standings(st, lid), pos = id => t.findIndex(r => r.id === id);
         const h = pos(a) < pos(b) ? a : b, aw = h === a ? b : a;
         fx[W - 1] = [{ h, a: aw, po: 'final', res: null }];
-        st.news.push({ r: st.round, text: `🏟 Финал плей-офф на «Уэмбли»: «${club(st, h).name}» — «${club(st, aw).name}». Самый дорогой матч в мире футбола!` });
+        st.news.push({ r: st.round, text: `🏟 Финал плей-офф ${L.name} на «Уэмбли»: «${club(st, h).name}» — «${club(st, aw).name}».${L.tier === 2 ? ' Самый дорогой матч в мире футбола!' : ''}` });
       }
     }
   }
@@ -288,18 +290,18 @@
 
   /* Итоги сезона: чемпионы, вылет и повышение */
   function seasonSummary(st) {
-    const out = { champions: {}, promoted: [], relegated: [], playoff: null };
+    const out = { champions: {}, promoted: [], relegated: [], playoff: null, playoffs: {} };
     const ids = leagueIds(st);
     ids.forEach(lid => { const t = standings(st, lid); out.champions[lid] = t[0] ? t[0].id : null; });
     for (let i = 0; i < ids.length - 1; i++) {
       const up = DATA.LEAGUES[ids[i]], low = DATA.LEAGUES[ids[i + 1]];
       if (!up || !low) continue;
       const tu = standings(st, up.id), tl = standings(st, low.id);
-      const down = tu.slice(-(up.relegate || 3)).map(r => r.id);
+      const down = up.relegate ? tu.slice(-up.relegate).map(r => r.id) : [];
       const rise = tl.slice(0, low.promote || 2).map(r => r.id);
       const fx = st.leagues[low.id].fixtures, fin = fx[fx.length - 1] && fx[fx.length - 1][0];
       const po = fin && fin.po === 'final' ? winner(fin) : (tl[low.promote || 2] ? tl[low.promote || 2].id : null);
-      if (po) { rise.push(po); out.playoff = po; }
+      if (po) { rise.push(po); out.playoffs[low.id] = po; if (!out.playoff) out.playoff = po; }
       down.forEach(id => out.relegated.push({ id, from: up.id, to: low.id }));
       rise.forEach(id => out.promoted.push({ id, from: low.id, to: up.id }));
     }
@@ -342,7 +344,7 @@
     const sum = seasonSummary(st);
     const table = standings(st);
     st.history = st.history || [];
-    st.history.push({ season: st.seasonName, champion: table[0].id, champions: sum.champions, promoted: sum.promoted.map(x => x.id), relegated: sum.relegated.map(x => x.id), playoff: sum.playoff, lg: st.lg, user: st.userClub ? table.findIndex(r => r.id === st.userClub) + 1 : null });
+    st.history.push({ season: st.seasonName, champion: table[0].id, champions: sum.champions, promoted: sum.promoted.map(x => x.id), relegated: sum.relegated.map(x => x.id), playoff: sum.playoff, playoffs: sum.playoffs, lg: st.lg, user: st.userClub ? table.findIndex(r => r.id === st.userClub) + 1 : null });
     st.lastSummary = sum;
     if (G.TR) G.TR.endLoans(st);
     G.CAR.retire(st);
@@ -447,5 +449,5 @@
   async function exportSave(st) { await G.STORE.exportFile(serialize(st), `kombinaciya-${st.seasonName.replace('/', '-')}-tur${st.round + 1}`); }
   async function importSave(file) { const st = revive(await G.STORE.importFile(file)); if (!st) throw new Error('Файл не похож на сохранение игры'); save(st); return st; }
 
-  G.LEAGUE = { leagueIds, tier, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
+  G.LEAGUE = { leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
 })(typeof window !== 'undefined' ? window : globalThis);

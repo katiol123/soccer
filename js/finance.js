@@ -130,9 +130,9 @@
   }
   const yearly = w => w * 52 / 1000;                                              // тыс./нед → млн/год
   function squadValue(club) { return Math.round(U.sum(club.players, value)); }
-  function ticket(club) { return Math.max(15, (40 + (club.str - 10) * 10) * lgFin(club).ticketK); }    // £ за билет
+  function ticket(club) { return Math.max(12, (40 + (club.str - 10) * 10) * lgFin(club).ticketK); }    // £ за билет
   function commercial(club) { return 12 * Math.exp(0.65 * (club.str - 10)) * lgFin(club).commK; }       // млн/сезон
-  function operating(club) { return Math.max(4, (30 + (club.str - 10) * 15) * lgFin(club).opsK); }     // млн/сезон
+  function operating(club) { return Math.max(6, 30 + (club.str - 10) * 15) * lgFin(club).opsK; }     // млн/сезон
   function para(club) { return (club.fin && club.fin.para && club.fin.para[0]) || 0; }                  // «парашют», млн/сезон
 
   function emptyLedger() { return { tv: 0, gate: 0, comm: 0, prize: 0, wages: 0, ops: 0, transfers: 0 }; }
@@ -171,8 +171,8 @@
     const exp = expectedPositions(st);
     st.clubs.forEach(c => {
       if (!c.fin) {
-        const t2 = G.DATA && G.DATA.LEAGUES[c.league] && G.DATA.LEAGUES[c.league].tier > 1;
-        c.fin = { balance: Math.round(t2 ? 10 + (c.str - 9) * 8 : 20 + (c.str - 10) * 35), season: emptyLedger(), last: null, hist: [] };
+        const B = lgFin(c).bal || [20, 35, 10]; // стартовый баланс: база, прибавка за силу, опорная сила
+        c.fin = { balance: Math.round(B[0] + (c.str - B[2]) * B[1]), season: emptyLedger(), last: null, hist: [] };
         c.fin.hist.push(c.fin.balance);
       }
       c.fin.target = exp[c.id];
