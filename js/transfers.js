@@ -76,6 +76,7 @@
     const f = findPlayer(st, pid); if (!f) return { status: 'reject', msg: 'Игрок не найден.' };
     const { p, c: seller } = f;
     const me = club(st, st.userClub);
+    if (FIN().embargo(me)) return { status: 'reject', msg: 'Лига запретила клубу регистрировать новых игроков из-за долгов.' };
     const n = neg(st, pid);
     if (n.fee) return { status: 'accept', fee: n.fee, msg: 'Сумма уже согласована.' };
     const nfs = notForSale(st, seller, p);
@@ -202,7 +203,7 @@
     const myCore = core(me);
     const cands = me.players.filter(p => !p.loan && posCount(me, p.pos) > MIN_POS[p.pos] && !m.offers.some(o => o.pid === p.id));
     for (const c of st.clubs) {
-      if (c.id === st.userClub || m.offers.length >= 4) continue;
+      if (c.id === st.userClub || m.offers.length >= 4 || FIN().embargo(c)) continue;
       const cc = core(c);
       const anyListed = cands.some(p => m.listed.includes(p.id) && TAC.overall(p) >= cc - 3.5);
       if (U.rnd() > (anyListed ? 0.22 : 0.1)) continue;
@@ -282,7 +283,7 @@
     m.ai = m.ai || {};
     const deals = [];
     for (const buyer of U.shuffle(st.clubs.slice())) {
-      if (buyer.id === st.userClub) continue;
+      if (buyer.id === st.userClub || FIN().embargo(buyer)) continue;
       const key = buyer.id + '@' + w.id;
       const short = buyer.players.length < 22;
       if ((m.ai[key] || 0) >= (short ? 3 : 2) || U.rnd() > (short ? 0.6 : 0.35)) continue;
@@ -451,6 +452,7 @@
   function exerciseOption(st, p) {
     const L = p.loan; if (!L || !L.option) return { ok: false, msg: 'Опции выкупа нет.' };
     const owner = club(st, L.from), cur = club(st, L.to);
+    if (FIN().embargo(cur)) return { ok: false, msg: 'Лига запретила клубу регистрировать новых игроков из-за долгов.' };
     if (cur.fin.transferBudget != null && cur.id === st.userClub && L.option > cur.fin.transferBudget) return { ok: false, msg: 'Не хватает трансферного бюджета.' };
     p.loan = null;
     cur.players = cur.players.filter(x => x !== p); delete cur._map;
@@ -500,6 +502,7 @@
     const f = findPlayer(st, pid); if (!f) return { error: 'Игрок не найден.' };
     const { p, c: owner } = f, me = club(st, st.userClub);
     if (!windowState(st).open) return { error: 'Трансферное окно закрыто.' };
+    if (FIN().embargo(me)) return { error: 'Лига запретила клубу регистрировать новых игроков из-за долгов.' };
     if (p.loan) return { error: 'Игрок уже в аренде.' };
     if (loansIn(me).length >= MAX_LOANS_IN) return { error: `Не больше ${MAX_LOANS_IN} арендованных игроков.` };
     if (me.players.length >= MAX_SQUAD) return { error: `В составе уже ${MAX_SQUAD} игроков.` };
@@ -538,7 +541,7 @@
       for (const p of kids) {
         if (U.rnd() > 0.25 || (m.ail[owner.id + w.id] || 0) >= 2) continue;
         const ovr = TAC.overall(p);
-        const takers = st.clubs.filter(c => c !== owner && c.id !== st.userClub && loansIn(c).length < 2 && c.players.length < 28).map(c => {
+        const takers = st.clubs.filter(c => c !== owner && c.id !== st.userClub && !FIN().embargo(c) && loansIn(c).length < 2 && c.players.length < 28).map(c => {
           const same = c.players.filter(x => x.pos === p.pos).sort((a, b) => TAC.overall(b) - TAC.overall(a));
           const worst = same.length >= STARTERS[p.pos] ? TAC.overall(same[STARTERS[p.pos] - 1]) : 0;
           return { c, fit: ovr - worst };

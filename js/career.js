@@ -115,6 +115,7 @@
     if (!ai) {
       if (c.players.length >= TR().MAX_SQUAD) return { ok: false, msg: `В составе уже ${TR().MAX_SQUAD} игроков.` };
       if (FIN().wageBill(c) + wage > c.fin.wageBudget) return { ok: false, msg: 'Совет не одобрит: превышен бюджет зарплат.' };
+      if (FIN().embargo(c) && wage > FIN().EMB_WAGE) return { ok: false, msg: `Запрет на регистрацию: лига разрешает подписывать только свободных агентов с зарплатой до £${FIN().EMB_WAGE} тыс./нед.` };
       const h = p.h || { amb: 10 };
       if (h.amb >= 16 && TAC.overall(p) >= 16 && FIN().level(c) >= 14 && d.idle < 10) return { ok: false, msg: `${p.name} ждёт предложений от клубов посильнее.` };
       p.faTries = (p.faTries == null ? 2 : p.faTries);
@@ -138,6 +139,7 @@
     for (const c of st.clubs) {
       if (c.id === st.userClub) continue;
       if (!force && U.rnd() > 0.2) continue;
+      if (FIN().embargo(c) && c.players.length >= 20) continue; // под запретом — только в крайнем случае
       const needs = TR().needs(c).filter(n => n.lack > 0 || c.players.length < 22);
       for (const nd of needs.slice(0, 2)) {
         const cand = fa.filter(p => p.pos === nd.pos && TAC.overall(p) >= nd.cc - 3).sort((a, b) => TAC.overall(b) - TAC.overall(a))[0];

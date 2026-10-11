@@ -31,5 +31,7 @@ for (let s = 0; s < N; s++) {
   st.clubs.forEach(c => { if (c.fin.para) console.log('  парашют', c.name, c.league, JSON.stringify(c.fin.para)); });
   const L = st.clubs.map(c => ({ n: c.name, lg: c.league, pr: c.fin.last.profit, tv: c.fin.last.tv, w: c.fin.last.wages }));
   LEAGUE.leagueIds(st).forEach(lid => { const x = L.filter(r => r.lg === lid).map(r => r.pr); console.log(lid, 'прибыль прошл. сезона (по новой лиге): мин', Math.min(...x).toFixed(0), 'ср', (x.reduce((a, b) => a + b, 0) / x.length).toFixed(1), 'макс', Math.max(...x).toFixed(0)); });
+  LEAGUE.leagueIds(st).forEach(lid => { const cs = LEAGUE.leagueClubs(st, lid); console.log(lid, 'владельцы вложили', cs.reduce((a, c) => a + (c.fin.last.owner || 0), 0).toFixed(1), '| в минусе', cs.filter(c => c.fin.balance < 0).length, '| запрет', cs.filter(c => c.fin.embargo).map(c => c.short).join(',') || '—', '| внешнее упр.', cs.filter(c => c.fin.admin).map(c => c.short + '×' + c.fin.admin).join(',') || '—'); });
+  st.news.filter(n => /внешнее управление|запрещает/.test(n.text)).slice(-6).forEach(n => console.log('  ', n.text));
   console.log('Свободных агентов:', st.fa.length, '| трансферов в истории:', st.market ? st.market.history.length : 0);
 }

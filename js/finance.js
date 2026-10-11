@@ -135,7 +135,68 @@
   function operating(club) { return Math.max(6, 30 + (club.str - 10) * 15) * lgFin(club).opsK; }     // млн/сезон
   function para(club) { return (club.fin && club.fin.para && club.fin.para[0]) || 0; }                  // «парашют», млн/сезон
 
-  function emptyLedger() { return { tv: 0, gate: 0, comm: 0, prize: 0, wages: 0, ops: 0, transfers: 0 }; }
+  function emptyLedger() { return { tv: 0, gate: 0, comm: 0, prize: 0, wages: 0, ops: 0, transfers: 0, owner: 0 }; }
+
+  /* ---------- владелец, запрет на регистрацию, внешнее управление ----------
+     Убытки клубов покрывает владелец (в пределах своей «щедрости» за сезон). Если денег нет и долг растёт —
+     лига запрещает регистрировать игроков, а при огромном долге клуб уходит во внешнее управление (−12 очков). */
+  const OWN_K = [6, 1.6, 0.6];   // поддержка владельца за сезон на единицу щедрости, млн (по дивизионам)
+  const EMB = [40, 12, 4];       // долг, при котором вводится запрет на регистрацию игроков, млн
+  const EMB_WAGE = 12;           // при запрете можно подписать только свободного агента не дороже этого (тыс./нед)
+  function tierOf(c) { const L = G.DATA && G.DATA.LEAGUES[c.league]; return L ? L.tier : 1; }
+  function ownerCap(c) { return Math.round((c.own ? c.own.w : 10) * OWN_K[Math.min(2, tierOf(c) - 1)] * 10) / 10; }
+  function debtLimit(c) { return EMB[Math.min(2, tierOf(c) - 1)]; }
+  function rollOwner(rng, min) { return { w: U.clamp(Math.round(2 + rng() * 14 + rng() * 4), min || 1, 20) }; }
+  function ownerLabel(c) {
+    const w = c.own ? c.own.w : 10;
+    return w >= 16 ? ['Миллиардер', 'покрывает почти любые убытки'] : w >= 11 ? ['Щедрый владелец', 'охотно гасит долги клуба'] : w >= 6 ? ['Осторожный владелец', 'помогает, но в разумных пределах'] : ['Владелец без денег', 'клуб должен жить по средствам'];
+  }
+  function embargo(c) { return !!(c.fin && c.fin.embargo); }
+  /* Взносы владельца: гасят минус на балансе в пределах оставшейся поддержки на сезон */
+  function ownerRound(st) {
+    for (const c of st.clubs) {
+      if (!c.fin || c.fin.balance >= 0 || !(c.fin.ownLeft > 0.05)) continue;
+      const inj = Math.round(Math.min(-c.fin.balance + debtLimit(c) * 0.25, c.fin.ownLeft) * 10) / 10;
+      book(c, 'owner', inj);
+      c.fin.ownLeft = Math.round((c.fin.ownLeft - inj) * 10) / 10;
+      if (c.id === st.userClub) st.news.push({ r: st.round, text: `💰 Владелец «${c.name}» вносит ${fmtM(inj)}, чтобы закрыть дыру в бюджете.${c.fin.ownLeft <= 0.05 ? ' Больше денег в этом сезоне он не даст.' : ''}` });
+    }
+  }
+  /* Санкции: запрет на регистрацию и внешнее управление */
+  function sanctions(st, final) {
+    for (const c of st.clubs) {
+      if (!c.fin) continue;
+      const L = debtLimit(c), me = c.id === st.userClub;
+      if (!c.fin.embargo && c.fin.balance < -L) {
+        c.fin.embargo = true; c.fin.transferBudget = 0;
+        st.news.push({ r: st.round, text: `⛔ «${c.name}»: долг превысил ${fmtM(L)} — лига запрещает клубу регистрировать новых игроков.${me ? ` Можно подписывать только свободных агентов с зарплатой до £${EMB_WAGE} тыс./нед.` : ''}` });
+      } else if (c.fin.embargo && c.fin.balance > -L / 2) {
+        c.fin.embargo = false;
+        if (me) st.news.push({ r: st.round, text: `✅ Запрет на регистрацию игроков снят: финансы «${c.name}» снова под контролем.` });
+      }
+      if (c.fin.balance < -3 * L && !(c.fin.ownLeft > 0.05)) administration(st, c, final);
+    }
+  }
+  function administration(st, c, final) {
+    const L = debtLimit(c), season = st.season + (final ? 1 : 0);
+    st.ded = st.ded || {};
+    st.ded[season + ':' + c.id] = 12;
+    // кредиторы списывают большую часть долга, клуб покупает новый владелец
+    const written = -c.fin.balance - L * 0.8;
+    c.fin.balance = -L * 0.8;
+    c.own = rollOwner(Math.random, 8);
+    c.fin.ownLeft = ownerCap(c);
+    c.fin.admin = (c.fin.admin || 0) + 1;
+    c.fin.embargo = true; c.fin.transferBudget = 0;
+    c.players.forEach(p => { p.wage = Math.round(p.wage * 0.8); p.mood = Math.max(0, (p.mood == null ? 60 : p.mood) - 15); });
+    // администраторы выставляют на продажу самых дорогих игроков
+    const top = c.players.slice().sort((a, b) => value(b) - value(a)).slice(0, 2);
+    if (c.id === st.userClub) {
+      if (G.TR) { const m = G.TR.market(st); top.forEach(p => { if (!m.listed.includes(p.id)) m.listed.push(p.id); }); }
+      if (st.board) st.board.conf = Math.max(0, st.board.conf - 20);
+    } else top.forEach(p => { p.mood = Math.min(p.mood, 15); });
+    st.news.push({ r: st.round, text: `🚨 «${c.name}» уходит во внешнее управление: кредиторы списывают ${fmtM(written)} долга, клуб получает −12 очков${final ? ' в следующем сезоне' : ''}, зарплаты урезаны на 20%, ${top.map(p => p.name).join(' и ')} выставлены на продажу. Клуб купил новый владелец.` });
+  }
 
   /* Прогноз доходов на сезон (для бюджета зарплат) */
   function projectedIncome(club, expectedPos) {
@@ -179,6 +240,9 @@
       setBudget(st, c, exp[c.id]);
       if (c.fin.transferBudget == null) c.fin.transferBudget = Math.round(Math.max(0, c.fin.balance * 0.5));
       if (c.fin.season.transfers == null) c.fin.season.transfers = 0;
+      if (c.fin.season.owner == null) c.fin.season.owner = 0;
+      if (!c.own) c.own = rollOwner(rng);
+      if (c.fin.ownLeft == null) c.fin.ownLeft = ownerCap(c);
     });
     if (st.userClub && !st.board) st.board = { conf: 60, target: exp[st.userClub] };
   }
@@ -214,6 +278,8 @@
       c.fin.hist.push(c.fin.balance);
       if (c.fin.hist.length > 80) c.fin.hist.shift();
     }
+    if (st.round % 4 === 3) ownerRound(st);
+    sanctions(st, false);
     if (G.TR) G.TR.syncLoanWages(st);
     moodRound(st);
     if (st.userClub) { boardRound(st); contractReminder(st); }
@@ -255,6 +321,13 @@
       const F = lgFin(c);
       book(c, 'prize', F.tvMerit * (tbl.length - 1 - i) + ((F.euro || [])[i] || 0));
       if (c.fin.para) { c.fin.para = c.fin.para.slice(1); if (!c.fin.para.length) c.fin.para = null; }
+    }));
+    // владельцы закрывают сезон, лига проверяет долги
+    ownerRound(st);
+    sanctions(st, true);
+    tables.forEach(tbl => tbl.forEach((r, i) => {
+      const c = st.clubs.find(x => x.id === r.id);
+      if (!c || !c.fin) return;
       const s = c.fin.season;
       c.fin.last = Object.assign({}, s, { season: st.seasonName, profit: Math.round((s.tv + s.gate + s.comm + s.prize + s.wages + s.ops + (s.transfers || 0)) * 10) / 10, pos: i + 1 });
       c.fin.season = emptyLedger();
@@ -292,7 +365,7 @@
   /* Новый сезон: бюджеты по ожидаемому месту, новая цель правления */
   function seasonStart(st) {
     const exp = expectedPositions(st);
-    st.clubs.forEach(c => { c.fin.target = exp[c.id]; setBudget(st, c, exp[c.id]); c.fin.transferBudget = Math.round(Math.max(0, c.fin.balance * 0.5)); });
+    st.clubs.forEach(c => { c.fin.target = exp[c.id]; setBudget(st, c, exp[c.id]); c.fin.ownLeft = ownerCap(c); c.fin.transferBudget = c.fin.embargo ? 0 : Math.round(Math.max(0, c.fin.balance * 0.5)); });
     if (st.userClub) { st.board.target = exp[st.userClub]; st.board.warned = false; }
   }
 
@@ -370,5 +443,5 @@
   const fmtM = v => (v < 0 ? '−' : '') + '£' + Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1) + ' млн';
   const fmtW = v => '£' + Math.round(v) + ' тыс./нед';
 
-  G.FIN = { CAPACITY, level, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
+  G.FIN = { CAPACITY, EMB_WAGE, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
 })(typeof window !== 'undefined' ? window : globalThis);

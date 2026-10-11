@@ -194,7 +194,8 @@
       else { h.d++; a.d++; h.pts++; a.pts++; h.form.push('D'); a.form.push('D'); }
     }));
     const list = Object.values(rows);
-    list.forEach(r => { r.gd = r.gf - r.ga; r.form = r.form.slice(-5); });
+    const D = st.ded || {};
+    list.forEach(r => { r.gd = r.gf - r.ga; r.form = r.form.slice(-5); const d = D[st.season + ':' + r.id]; if (d) { r.pts -= d; r.ded = d; } });
     list.sort((x, y) => y.pts - x.pts || y.gd - x.gd || y.gf - x.gf || club(st, x.id).name.localeCompare(club(st, y.id).name));
     return list;
   }
