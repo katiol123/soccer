@@ -88,7 +88,8 @@
     slots.forEach((s, si) => {
       pool.forEach(p => {
         const fitF = 1 - fitW * (1 - (0.55 + 0.45 * p.fit / 100));
-        pairs.push({ si, p, v: roleRating(p, s.role) * fitF });
+        const tv = G.TRAITS ? G.TRAITS.value(p, opts.ctx) : 0;
+        pairs.push({ si, p, v: (roleRating(p, s.role) + tv) * fitF });
       });
     });
     pairs.sort((a, b) => b.v - a.v);

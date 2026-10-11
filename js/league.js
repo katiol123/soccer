@@ -171,7 +171,9 @@
       const s = localStorage.getItem(SAVE_KEY);
       if (!s) return null;
       const st = JSON.parse(s);
-      return st && st.v === 1 ? st : null;
+      if (!st || st.v !== 1) return null;
+      if (G.TRAITS) G.TRAITS.ensure(st.clubs);
+      return st;
     } catch (e) { return null; }
   }
   function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }

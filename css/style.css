@@ -290,11 +290,11 @@ td.pname { font-weight: 700; }
 .plan.on { border-color: var(--accent); background: rgba(0,255,135,.12); }
 .plan-ico { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: rgba(255,255,255,.08); flex: none; }
 .plan-desc { font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 36px; }
-.bench { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; }
+.bench { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px; }
 .bench-p { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,.2); text-align: left; transition: all .2s; font-size: 13px; }
 .bench-p:hover { border-color: var(--line2); }
 .bench-p.sel { border-color: var(--accent); background: rgba(0,255,135,.12); }
-.bp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.bp-name { flex: 1; min-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .bp-ovr { font-weight: 800; font-size: 12px; }
 
 /* ===== ПРЕДМАТЧ ===== */
@@ -563,6 +563,26 @@ td.pname { font-weight: 700; }
 .ht-gem .lg-ico { width: 40px; height: 40px; }
 .ht-gem p { font-size: 13px; color: #d5cdf0; margin: 4px 0; }
 .ht-gem small { color: var(--muted); font-size: 12px; }
+
+/* особенности игроков */
+.trs { display: inline-flex; gap: 2px; vertical-align: middle; }
+.tr { font-style: normal; font-size: 12px; line-height: 1; padding: 2px 3px; border-radius: 6px; cursor: help; background: rgba(255,255,255,.07); }
+.tr.pos { box-shadow: inset 0 0 0 1px rgba(0,255,135,.45); }
+.tr.neg { box-shadow: inset 0 0 0 1px rgba(255,77,109,.55); }
+.tr.mix { box-shadow: inset 0 0 0 1px rgba(255,210,63,.5); }
+.chip .trs { margin-top: -1px; }
+.chip .tr { font-size: 10px; padding: 1px 2px; background: rgba(0,0,0,.55); }
+.bench-p .trs .tr { font-size: 11px; }
+.pc-trh { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+.pc-traits, .tr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.trc { display: flex; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid var(--line); border-left: 3px solid; }
+.trc.pos { border-left-color: #00ff87; } .trc.neg { border-left-color: #ff4d6d; } .trc.mix { border-left-color: #ffd23f; }
+.trc-i { font-size: 22px; line-height: 1.1; }
+.trc b { font-size: 14px; }
+.trc p { margin: 2px 0 0; font-size: 12.5px; color: #d5cdf0; }
+.tr-guide > p { color: var(--muted); }
+.fe.trait { background: rgba(255,210,63,.08); }
+@media (max-width: 640px) { .pc-traits, .tr-grid { grid-template-columns: 1fr; } }
 
 /* тосты */
 #toast-root { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; z-index: 70; pointer-events: none; }

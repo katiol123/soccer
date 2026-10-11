@@ -149,11 +149,13 @@
           a[k] = U.clamp(Math.round(v), 1, 20);
         }
         let num = pos === 'GK' && i === 0 ? 1 : nums[numIdx++];
-        players.push({
+        const pl = {
           id: club.id + '_' + (id++), club: club.id, name, pos, age, num, role: arch.n, star,
           a, fit: 100, form: 6.5, inj: 0, susp: 0, yc: 0,
           st: { apps: 0, goals: 0, assists: 0, yc: 0, rc: 0, rsum: 0 }
-        });
+        };
+        pl.tr = G.TRAITS ? G.TRAITS.roll(pl, rng) : [];
+        players.push(pl);
       }
     }
     return players;

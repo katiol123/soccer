@@ -102,7 +102,7 @@
           el('div.cd-top', null, [UI.crest(c, 88), el('div', null, [el('h3', { text: c.name }), el('div.cd-sub', { text: `${c.stadium} · ${c.city}` }), UI.stars(r), el('div.cd-exp', { text: 'Цель: ' + expect })])]),
           el('div.cd-coach', null, [el('small', { text: 'Нынешний тренер (уступит вам место)' }), el('b', { text: `${c.coach.name} (${c.coach.nat})` }), el('p', { text: c.coach.motto }),
             el('div.cd-tags', null, [el('span', { text: c.coach.formations.join(' / ') }), el('span', { text: TAC.PLANS[c.coach.plan].icon + ' ' + TAC.PLANS[c.coach.plan].n })])]),
-          el('div.cd-players', null, [el('small', { text: 'Лидеры состава' })].concat(top.map(p => el('div.cd-p', null, [el('span.bp-pos', { text: UI.posShort(p.pos) }), el('span', { text: p.name + (p.star ? ' ★' : '') }), el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })])))),
+          el('div.cd-players', null, [el('small', { text: 'Лидеры состава' })].concat(top.map(p => el('div.cd-p', null, [el('span.bp-pos', { text: UI.posShort(p.pos) }), el('span', null, [p.name + (p.star ? ' ★ ' : ' '), UI.traitIcons(p)]), el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })])))),
           el('button.btn.primary.big', { onclick: async () => { if (!(await this.confirmOverwrite())) return; this.startGame('manager', c.id, world, opts.turns); } }, [el('span', { text: `Возглавить «${c.name}»` })])
         );
       };
@@ -167,6 +167,7 @@
     gameMenu() {
       const content = el('div.gm', null, [
         el('button.btn', { text: '📖 Как играть', onclick: () => { md.close(); this.howTo(); } }),
+        el('button.btn', { text: '✦ Особенности игроков', onclick: () => { md.close(); UI.traitsGuide(); } }),
         el('button.btn', { text: SFX.on ? '🔊 Звук: вкл' : '🔇 Звук: выкл', onclick: (e) => { SFX.on = !SFX.on; this.soundPref(SFX.on); e.target.textContent = SFX.on ? '🔊 Звук: вкл' : '🔇 Звук: выкл'; } }),
         el('div.len-wrap', null, [this.lengthPicker(this.st.settings)]),
         el('button.btn', { text: '💾 Сохранить', onclick: () => { LEAGUE.save(this.st); UI.toast('Игра сохранена'); } }),
@@ -398,11 +399,18 @@
       const theirs = el('div.card.pm-opp', null, [el('h3', { text: `Соперник: ${opp.name}` })]);
       theirs.appendChild(el('div.pm-coach', null, [el('b', { text: `${opp.coach.name} (${opp.coach.nat})` }), el('p', { text: opp.coach.motto })]));
       theirs.appendChild(el('div.cd-tags', null, [el('span', { text: oppTac.formation }), el('span', { text: TAC.PLANS[oppTac.plan].icon + ' ' + TAC.PLANS[oppTac.plan].n }), el('span', { text: 'Менталитет: ' + TAC.MENTALITY[oppTac.mentality] }), el('span', { text: 'Прессинг: ' + TAC.PRESSING[oppTac.pressing] }), el('span', { text: 'Линия: ' + TAC.LINE[oppTac.line] })]));
+      const map0 = TAC.playerMap(opp);
       const notes = el('div.pm-notes', null, [el('small', { text: 'Решения тренера соперника:' })].concat(oppTac.notes.map(n => el('div', { text: '🧠 ' + n }))));
       theirs.appendChild(notes);
+      const oppTr = oppTac.lineup.map(id => map0[id]).filter(p => p && p.tr && p.tr.length);
+      if (oppTr.length) {
+        const tbox = el('div.pm-notes', null, [el('small', { text: 'Скаут: особенности игроков соперника' })]);
+        oppTr.slice(0, 6).forEach(p => p.tr.forEach(id => { const t = G.TRAITS.LIST[id]; tbox.appendChild(el('div', { title: t.d }, [`${t.i} ${p.name} — ${t.n}`])); }));
+        theirs.appendChild(tbox);
+      }
       const map = TAC.playerMap(opp);
       const ol = el('div.pm-xi');
-      TAC.FORMATIONS[oppTac.formation].forEach((s, i) => { const p = map[oppTac.lineup[i]]; if (p) ol.appendChild(el('div.pm-p', null, [el('span.lu-pos', { text: s.label }), el('span', { text: p.name }), el('b', { text: TAC.roleRating(p, s.role).toFixed(1), style: { color: U.attrColor(TAC.roleRating(p, s.role)) } })])); });
+      TAC.FORMATIONS[oppTac.formation].forEach((s, i) => { const p = map[oppTac.lineup[i]]; if (p) ol.appendChild(el('div.pm-p', null, [el('span.lu-pos', { text: s.label }), el('span', null, [p.name + ' ', UI.traitIcons(p)]), el('b', { text: TAC.roleRating(p, s.role).toFixed(1), style: { color: U.attrColor(TAC.roleRating(p, s.role)) } })])); });
       theirs.appendChild(ol);
       body.append(mine, theirs);
       root.appendChild(body);
@@ -630,7 +638,7 @@
         club.players.slice().sort((a, b) => { const x = get(a, sortK), y = get(b, sortK); return (x > y ? 1 : x < y ? -1 : 0) * dir; }).forEach(p => {
           const tr = el('tr' + (TAC.available(p) ? '' : '.unavail'), { onclick: () => UI.playerModal(p, club) });
           tr.appendChild(el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]));
-          tr.appendChild(el('td.pname', { text: p.name + (p.star ? ' ★' : '') + (p.inj > 0 ? ' ✚' : '') + (p.susp > 0 ? ' 🟥' : '') }));
+          tr.appendChild(el('td.pname', null, [p.name + (p.star ? ' ★' : '') + (p.inj > 0 ? ' ✚' : '') + (p.susp > 0 ? ' 🟥' : '') + ' ', UI.traitIcons(p)]));
           tr.appendChild(el('td', { text: p.age }));
           G.DATA.ATTRS.forEach(a => tr.appendChild(el('td', null, [UI.attrCell(p.a[a.k])])));
           tr.appendChild(el('td', null, [p.pos === 'GK' ? UI.attrCell(p.a.ref) : el('span.muted', { text: '–' })]));
@@ -677,6 +685,8 @@
         el('p', { text: 'Поле делится на 5 зон. Темп атаки перемещает мяч к штрафной соперника; в штрафной темп превращается в «угрозу» — при 60+ удар наносится автоматически. Обороняющиеся копят прессинг (100 = отбор и шанс контратаки) и щит. Фолы приводят к штрафным, пенальти (вы выбираете угол!) и карточкам; удары — к угловым.' }),
         el('h4', { text: 'Характеристики и тактика' }),
         el('p', { text: 'У игроков 8 характеристик (1–20): Удар, Пас, Дриблинг, Скорость, Отбор, Позиция, Выносливость, Хладнокровие (+ Рефлексы у вратарей). В обороне у своих ворот работают защитники, в центре — полузащитники, у чужих ворот — нападающие: схема определяет, кто и где участвует. Усталость снижает все характеристики — делайте замены. План на игру, менталитет, прессинг и линия обороны меняют силу каждого цвета.' }),
+        el('h4', { text: 'Особенности игроков' }),
+        el('p', null, [`У игроков есть особенности (всего ${Object.keys(G.TRAITS.LIST).length}): «Спорит с судьями», «Бьёт при первой возможности», «Передерживает мяч», «Решает в концовке», «Хрупкий» и другие. Они срабатывают, пока игрок на поле, и меняют силу блоков, удары, фолы, карточки, усталость и травмы. Значки видны в составе и на схеме — наведите на значок, чтобы прочитать эффект. `, el('button.btn.ghost.small', { text: 'Все особенности', onclick: () => UI.traitsGuide() })]),
         el('p', { text: 'Тренеры-ИИ выбирают схему и план исходя из своих предпочтений, состава и силы соперника, а по ходу матча реагируют на счёт, усталость и удаления.' })
       ]);
       UI.modal({ title: first ? 'Добро пожаловать в «Комбинацию»!' : 'Как играть', content, wide: true, buttons: [{ text: first ? 'Поехали!' : 'Понятно', cls: 'primary' }] });

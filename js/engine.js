@@ -3,7 +3,8 @@
    Команда с мячом копит «темп» и продвигается к воротам, обороняющаяся — прессингует и строит щит. */
 (function (G) {
   'use strict';
-  const U = G.U, TAC = G.TAC, BOARD = G.BOARD;
+  const U = G.U, TAC = G.TAC, BOARD = G.BOARD, TRAITS = G.TRAITS;
+  const TL = TRAITS.LIST;
 
   const CFG = {
     zoneCost: 32,          // темп для перехода в следующую зону
@@ -38,8 +39,8 @@
       this.subsLeft = 5;
       this.shield = 15; this.pressure = 0; this.shotCharge = 0; this.counterCharge = 0;
       this.st = { shots: 0, onT: 0, xg: 0, goals: 0, passes: 0, wins: 0, fouls: 0, yc: 0, rc: 0, corners: 0, poss: 0, offsides: 0, saves: 0, gems: [0, 0, 0, 0, 0, 0] };
-      this.onPitch.forEach(x => { if (x.p) Match.initPlayer(x.p); });
-      this.bench.forEach(p => Match.initPlayer(p));
+      this.onPitch.forEach(x => { if (x.p) Match.initPlayer(x.p, side); });
+      this.bench.forEach(p => Match.initPlayer(p, side));
       this.redCount = 0;
       this.notes = []; // решения тренера (для интерфейса)
     }
@@ -51,8 +52,9 @@
   }
 
   class Match {
-    static initPlayer(p) {
-      p.m = { fit: p.fit, perf: 0, goals: 0, assists: 0, yc: 0, rc: false, off: false, inj: false, played: false, saves: 0 };
+    static initPlayer(p, side) {
+      p.m = { side, fit: p.fit, perf: 0, goals: 0, assists: 0, yc: 0, rc: false, off: false, inj: false, played: false, saves: 0, shift: 0 };
+      if (TRAITS.has(p, 'inconsistent')) p.m.shift = U.rnd() < 0.5 ? 2 : -2;
     }
 
     constructor(cfg) {
@@ -66,6 +68,7 @@
         away: new TeamState('away', cfg.away.club, cfg.away.tactics, cfg.away.ctrl)
       };
       this.t.home.players().concat(this.t.away.players()).forEach(p => { p.m.played = true; });
+      this.oppR = { home: TAC.teamRating(cfg.away.club), away: TAC.teamRating(cfg.home.club) };
       this.board = new BOARD.Board(8, this.rng);
       this.board.fill();
       this.ball = 2; this.poss = 'home'; this.mom = 0;
@@ -108,6 +111,69 @@
 
     fatF(p) { return 0.72 + 0.28 * (p.m.fit / 100); }
 
+    /* ---------- особенности игроков ---------- */
+    cond(side, w) {
+      if (!w) return true;
+      const min = this.minute(), d = this.score[side] - this.score[OTHER(side)];
+      switch (w) {
+        case 'losing': return d < 0;
+        case 'losingLate': return d < 0 && min >= 70;
+        case 'winningLate': return d > 0 && min >= 70;
+        case 'lateNotWinning': return d <= 0 && min >= 70;
+        case 'clutch': return min >= 75;
+        case 'early': return this.half === 1 && min < 25;
+        case 'strongOpp': return this.oppR[side] >= 16;
+        case 'weakOpp': return this.oppR[side] <= 14.5;
+        case 'away': return side === 'away';
+      }
+      return false;
+    }
+    /* Эффективная характеристика игрока с учётом особенностей */
+    pa(p, k) {
+      let v = p.a[k];
+      if (!p.tr || !p.tr.length) return v;
+      const side = p.m ? p.m.side : 'home';
+      for (const id of p.tr) {
+        const t = TL[id];
+        if (!t) continue;
+        if (t.attr && this.cond(side, t.when)) v += (t.attr[k] || 0) + (t.attr.all || 0);
+        if (t.attrHome) v += side === 'home' ? t.attrHome : -t.attrHome;
+        if (id === 'flatTrack' && this.cond(side, 'strongOpp')) v -= 1;
+      }
+      if (p.m && p.m.shift) v += p.m.shift;
+      return U.clamp(v, 1, 22);
+    }
+    /* Командный множитель (произведение по игрокам на поле) */
+    tmul(side, key) {
+      let m = 1;
+      for (const x of this.t[side].onPitch) {
+        if (!x.p || !x.p.tr) continue;
+        for (const id of x.p.tr) { const t = TL[id]; if (t && t.team && t.team[key] != null && this.cond(side, t.when)) m *= t.team[key]; }
+      }
+      return m;
+    }
+    tadd(side, key) {
+      let a = 0;
+      for (const x of this.t[side].onPitch) {
+        if (!x.p || !x.p.tr) continue;
+        for (const id of x.p.tr) { const t = TL[id]; if (t && t.team && t.team[key] != null && this.cond(side, t.when)) a += t.team[key]; }
+      }
+      return a;
+    }
+    /* Личные модификаторы игрока */
+    pm(p, key) {
+      let m = 1;
+      if (p && p.tr) for (const id of p.tr) { const t = TL[id]; if (t && t.me && t.me[key] != null && this.cond(p.m ? p.m.side : 'home', t.when)) m *= t.me[key]; }
+      return m;
+    }
+    padd(p, key) {
+      let a = 0;
+      if (p && p.tr) for (const id of p.tr) { const t = TL[id]; if (t && t.me && t.me[key] != null && this.cond(p.m ? p.m.side : 'home', t.when)) a += t.me[key]; }
+      return a;
+    }
+    withTrait(side, id) { return this.t[side].onPitch.filter(x => x.p && TRAITS.has(x.p, id)).map(x => x.p); }
+    traitNote(p, id) { return `${TL[id].i} ${p.name}`; }
+
     val(side, attr, phase) {
       const ts = this.t[side];
       let s = 0, w = 0;
@@ -117,7 +183,7 @@
         const wt = role.w[phase];
         if (wt <= 0) continue;
         const suit = Math.sqrt(TAC.lineSuit(x.p.pos, role.line));
-        s += wt * x.p.a[attr] * this.fatF(x.p) * suit;
+        s += wt * this.pa(x.p, attr) * this.fatF(x.p) * suit;
         w += wt;
       }
       return w ? s / w : 5;
@@ -132,12 +198,12 @@
       const gk = this.t[side].gk();
       if (!gk) return { ref: 4, pos: 4, pas: 6, com: 6, p: null };
       const f = this.fatF(gk);
-      return { ref: gk.a.ref * f, pos: gk.a.pos * f, pas: gk.a.pas * f, com: gk.a.com * f, p: gk };
+      return { ref: this.pa(gk, 'ref') * f, pos: this.pa(gk, 'pos') * f, pas: this.pa(gk, 'pas') * f, com: this.pa(gk, 'com') * f, p: gk };
     }
     pickPlayer(side, attr, phase, exclude) {
       const list = this.t[side].onPitch.filter(x => x.p && x.slot.role !== 'GK' && x.p !== exclude);
       if (!list.length) return null;
-      const it = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[phase] + 0.02, 1.5) * Math.pow(x.p.a[attr], 1.6));
+      const it = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[phase] + 0.02, 1.5) * Math.pow(this.pa(x.p, attr), 1.6));
       return it.p;
     }
     plan(side) { return this.t[side].tac.plan; }
@@ -174,7 +240,7 @@
       const ctx = { side, critical: false, shotTaken: false, stopped: false };
       // «решающий момент» — критический ход зависит от хладнокровия
       const comV = this.val(side, 'com', side === this.poss ? PHASE(this.rp(side)) : PHASE(this.rp(side)));
-      if (U.rnd() < comV / 170) { ctx.critical = true; }
+      if (U.rnd() < comV / 170 + this.tadd(side, 'crit')) { ctx.critical = true; }
       this.t[this.poss].st.poss++;
       const stepFx = [];
       for (const step of res.steps) {
@@ -213,17 +279,17 @@
       const shieldF = (1 - opp.shield / 230) * (oplan === 'park' ? 0.82 : 1);
       const aM = this.atkM(side) * this.numF(side, ph);
       let gain = 0;
-      const directF = plan === 'direct' ? 1.12 : 1;
+      const directF = (plan === 'direct' ? 1.12 : 1) * this.tmul(side, 'atk');
 
       if (c[1]) { // Пас
-        let g = CFG.base.pas * c[1] * R(this.val(side, 'pas', ph), this.val(OTHER(side), 'pos', dph)) * (plan === 'possession' ? 1.3 : 1) * (plan === 'counter' ? 0.9 : 1);
+        let g = this.tmul(side, 'pas') * CFG.base.pas * c[1] * R(this.val(side, 'pas', ph), this.val(OTHER(side), 'pos', dph)) * (plan === 'possession' ? 1.3 : 1) * (plan === 'counter' ? 0.9 : 1);
         g *= mult * aM * shieldF * directF;
         gain += g; me.st.passes += c[1];
         fx.push({ k: 'gain', t: 1, v: g, text: '+' + Math.round(g) + ' пас' });
         this.credit(side, 'pas', ph, 0.02 * c[1]);
       }
       if (c[2]) { // Дриблинг
-        let g = CFG.base.dri * c[2] * R(this.val(side, 'dri', ph), this.val(OTHER(side), 'tac', dph)) * (plan === 'wings' ? 1.2 : 1);
+        let g = this.tmul(side, 'dri') * CFG.base.dri * c[2] * R(this.val(side, 'dri', ph), this.val(OTHER(side), 'tac', dph)) * (plan === 'wings' ? 1.2 : 1);
         g *= mult * aM * shieldF * directF;
         gain += g;
         const rel = 6 * c[2] * mult * R(this.val(side, 'dri', ph), this.val(OTHER(side), 'tac', dph));
@@ -238,10 +304,10 @@
       }
       if (c[3]) { // Скорость
         let cm = 1;
-        if (this.counter && this.counter.side === side) cm = this.counter.mult;
+        if (this.counter && this.counter.side === side) cm = this.counter.mult * this.tmul(side, 'counterMult');
         const oline = opp.tac.line;
         const lineF = [0.85, 1, 1.25][oline];
-        let g = CFG.base.pac * c[3] * R(this.val(side, 'pac', ph), this.val(OTHER(side), 'pac', dph)) * (plan === 'counter' ? 1.3 : 1) * (plan === 'possession' ? 0.85 : 1) * cm * lineF;
+        let g = this.tmul(side, 'pac') * (rp >= 2 ? this.tmul(OTHER(side), 'oppPac') : 1) * CFG.base.pac * c[3] * R(this.val(side, 'pac', ph), this.val(OTHER(side), 'pac', dph)) * (plan === 'counter' ? 1.3 : 1) * (plan === 'possession' ? 0.85 : 1) * cm * lineF;
         g *= mult * aM * shieldF * directF;
         gain += g;
         ctx.paceGain = (ctx.paceGain || 0) + g;
@@ -255,7 +321,7 @@
         fx.push({ k: 'info', t: 4, text: 'Борьба: −' + Math.round(rel) + ' прессинг' });
       }
       if (c[5]) { // Позиция: открывания
-        const r = R(this.val(side, 'pos', ph), this.val(OTHER(side), 'pos', dph)) * (plan === 'wings' ? 1.35 : 1);
+        const r = R(this.val(side, 'pos', ph), this.val(OTHER(side), 'pos', dph)) * (plan === 'wings' ? 1.35 : 1) * this.tmul(side, 'posAtk');
         if (rp >= 3) {
           const v = 7 * c[5] * mult * r * this.atkM(side);
           me.shotCharge = Math.min(100, me.shotCharge + v);
@@ -284,7 +350,7 @@
       }
       // удар
       const rpNow = this.rp(side);
-      if (!ctx.shotTaken && rpNow >= 3 && me.shotCharge >= CFG.autoShot && c[0] < 3) {
+      if (!ctx.shotTaken && rpNow >= 3 && me.shotCharge >= CFG.autoShot + this.tadd(side, 'autoShot') && c[0] < 3) {
         fx.push({ k: 'event', text: 'МОМЕНТ!' });
         this.shoot(side, rpNow === 4 ? 'box' : 'long', rpNow === 4 ? 3 : 4, step, fx, ctx);
         return;
@@ -292,6 +358,13 @@
       if (!ctx.shotTaken && c[0] >= 3) {
         if (rpNow === 4) this.shoot(side, 'box', c[0], step, fx, ctx);
         else if (rpNow === 3) this.shoot(side, 'long', c[0], step, fx, ctx);
+        else if (rpNow === 2 && c[0] >= 4) {
+          const sh = this.withTrait(side, 'shooter');
+          if (sh.length) {
+            if (this.log) this.say('trait', `${this.traitNote(sh[0], 'shooter')} не думает — лупит из центра поля!`, side);
+            this.shoot(side, 'vlong', c[0], step, fx, ctx, sh[0]);
+          }
+        }
       }
     }
 
@@ -312,13 +385,16 @@
         }
         this.mom -= CFG.zoneCost;
         // офсайд при рывке против высокой линии
-        if (ctx.paceGain && ctx.paceGain > gain * 0.4 && opp.tac.line === 2 && this.rp(side) >= 2) {
-          const p = 0.2 * R(this.val(OTHER(side), 'pos', 'back'), this.val(side, 'pos', 'front'));
+        const trapF = this.tmul(OTHER(side), 'oppOffside');
+        if (ctx.paceGain && ctx.paceGain > gain * 0.4 && (opp.tac.line === 2 || (opp.tac.line === 1 && trapF > 1)) && this.rp(side) >= 2) {
+          const p = 0.2 * R(this.val(OTHER(side), 'pos', 'back'), this.val(side, 'pos', 'front')) * this.tmul(side, 'offside') * trapF * (opp.tac.line === 1 ? 0.5 : 1);
           if (U.rnd() < p) {
             me.st.offsides++;
             fx.push({ k: 'event', text: 'ОФСАЙД!' });
-            const fw = this.pickPlayer(side, 'pac', 'front');
-            if (this.log) this.say('offside', `${this.pname(fw)} убегает в отрыв, но флажок поднят — офсайд. Ловушка сработала.`, side);
+            const runners = this.withTrait(side, 'runner');
+            const fw = runners.length && U.rnd() < 0.7 ? runners[0] : this.pickPlayer(side, 'pac', 'front');
+            const trapper = this.withTrait(OTHER(side), 'trap')[0];
+            if (this.log) this.say('offside', TRAITS.has(fw, 'runner') ? `${this.traitNote(fw, 'runner')} снова стартует слишком рано — офсайд.` : trapper ? `${this.traitNote(trapper, 'trap')} синхронно выводит линию — ${this.pname(fw)} в офсайде!` : `${this.pname(fw)} убегает в отрыв, но флажок поднят — офсайд. Ловушка сработала.`, side);
             this.turnover(OTHER(side), 'offside', fx);
             ctx.stopped = true;
             return;
@@ -345,7 +421,7 @@
       const me = this.t[side], opp = this.t[OTHER(side)], aSide = OTHER(side);
       const arp = this.rp(aSide), aph = PHASE(arp), ph = PHASE(4 - arp);
       const plan = me.tac.plan, oplan = opp.tac.plan;
-      const dM = this.defM(side) * this.numF(side, ph);
+      const dM = this.defM(side) * this.numF(side, ph) * this.tmul(side, 'def');
       const highUp = arp <= 1; // прессинг на чужой половине
       let press = 0;
       if (c[4]) { // Отбор
@@ -353,7 +429,7 @@
         if (plan === 'gegenpress') p *= highUp ? 1.5 : 1.3;
         if (me.tac.line === 2 && highUp) p *= 1.15;
         if (oplan === 'possession') p *= 0.85;
-        p *= mult * dM;
+        p *= mult * dM * this.tmul(side, 'press') * this.tmul(aSide, 'oppPress');
         press += p;
         fx.push({ k: 'press', t: 4, v: p, text: '+' + Math.round(p) + ' прессинг' });
         this.credit(side, 'tac', ph, 0.025 * c[4]);
@@ -361,19 +437,20 @@
         const tacV = this.val(side, 'tac', ph), comV = this.val(side, 'com', ph);
         let fp = CFG.foulBase * (c[4] / 3) * (1 + (11 - tacV) / 14) * (1 + (11 - comV) / 20) * [0.8, 1, 1.25][me.tac.pressing];
         if (step.groups.some(g => g.t === 4 && g.size >= 4)) fp *= 1.8;
+        fp *= this.tmul(side, 'foul') * this.tmul(aSide, 'oppFoul');
         if (U.rnd() < U.clamp(fp, 0, 0.4)) {
           this.foul(side, ph, fx, ctx);
           return;
         }
       }
       if (c[1]) { // Пас: перехват линий
-        const p = 4.5 * c[1] * R(this.val(side, 'pos', ph), this.val(aSide, 'pas', aph)) * mult * dM;
+        const p = 4.5 * c[1] * R(this.val(side, 'pos', ph), this.val(aSide, 'pas', aph)) * mult * dM * this.tmul(side, 'press') * this.tmul(aSide, 'oppPress');
         press += p;
         fx.push({ k: 'press', t: 1, v: p, text: '+' + Math.round(p) + ' перехват' });
       }
       if (c[3]) { // Скорость: возврат назад
         const r = R(this.val(side, 'pac', ph), this.val(aSide, 'pac', aph));
-        const m = 7 * c[3] * r * mult * dM;
+        const m = 7 * c[3] * r * mult * dM * this.tmul(side, 'recover');
         this.mom = Math.max(0, this.mom - m);
         press += 2 * c[3] * mult;
         fx.push({ k: 'slow', t: 3, text: '−' + Math.round(m) + ' темп соперника' });
@@ -381,6 +458,7 @@
       if (c[5]) { // Позиция: щит
         let s = CFG.shieldBase * c[5] * R(this.val(side, 'pos', ph), this.val(aSide, 'pos', aph)) * mult * dM;
         if (plan === 'park') s *= 1.45;
+        s *= this.tmul(side, 'shield');
         if (me.tac.line === 0 && arp >= 3) s *= 1.15;
         me.shield = Math.min(CFG.shieldCap, me.shield + s);
         fx.push({ k: 'shield', t: 5, text: '+' + Math.round(s) + ' щит' });
@@ -392,7 +470,7 @@
         }
       }
       if (c[2]) { // Дриблинг: подготовка контратаки
-        const v = 7 * c[2] * R(this.val(side, 'dri', 'front'), this.val(aSide, 'tac', 'back')) * mult;
+        const v = 7 * c[2] * R(this.val(side, 'dri', 'front'), this.val(aSide, 'tac', 'back')) * mult * this.tmul(side, 'counterCharge');
         me.counterCharge = Math.min(70, me.counterCharge + v);
         fx.push({ k: 'charge', t: 2, text: '+' + Math.round(v) + ' к контратаке' });
       }
@@ -409,7 +487,11 @@
           const p = this.pickPlayer(side, 'tac', ph);
           if (p) p.m.perf += 0.15;
           fx.push({ k: 'event', text: 'ОТБОР!' });
-          if (this.log) {
+          const holders = this.withTrait(aSide, 'holder');
+          if (holders.length && U.rnd() < 0.6) {
+            holders[0].m.perf -= 0.1;
+            if (this.log) this.say('trait', `${this.traitNote(holders[0], 'holder')} передержал мяч — и ${this.pname(p)} его отбирает!`, side);
+          } else if (this.log) {
             const where = arp >= 3 ? 'у своей штрафной' : arp === 2 ? 'в центре поля' : 'высоко на чужой половине';
             this.say('tackle', `${this.pname(p)} отбирает мяч ${where}!`, side);
           }
@@ -447,19 +529,20 @@
       const me = this.t[side], aSide = OTHER(side), opp = this.t[aSide];
       me.st.fouls++;
       const list = me.onPitch.filter(x => x.p && x.slot.role !== 'GK');
-      const fouler = U.pickWeighted(list, x => (TAC.ROLES[x.slot.role].w[ph] + 0.05) * (22 - x.p.a.tac) * (22 - x.p.a.com)).p;
+      const fouler = U.pickWeighted(list, x => (TAC.ROLES[x.slot.role].w[ph] + 0.05) * (22 - this.pa(x.p, 'tac')) * (22 - this.pa(x.p, 'com')) * this.pm(x.p, 'foulW')).p;
       const victim = this.pickPlayer(aSide, 'dri', PHASE(this.rp(aSide)));
       me.pressure = 0;
       ctx.stopped = true;
       fx.push({ k: 'event', text: 'ФОЛ!' });
       const arp = this.rp(aSide);
       let card = null;
-      const cardP = 0.3 + (10 - fouler.a.com) * 0.015 + (arp >= 3 ? 0.1 : 0) + (this.counter && this.counter.side === aSide ? 0.15 : 0);
-      if (U.rnd() < 0.012) card = 'red';
+      const cardP = 0.3 + (10 - this.pa(fouler, 'com')) * 0.015 + (arp >= 3 ? 0.1 : 0) + (this.counter && this.counter.side === aSide ? 0.15 : 0) + this.padd(fouler, 'cardP');
+      if (U.rnd() < 0.012 * this.pm(fouler, 'redP')) card = 'red';
       else if (U.rnd() < cardP) card = fouler.m.yc >= 1 ? 'red2' : 'yellow';
       if (this.log || card) {
         const where = arp === 4 ? 'в штрафной' : arp === 3 ? 'у штрафной' : '';
-        this.say('foul', `Фол! ${this.pname(fouler)} сбивает ${this.pname(victim)} ${where}.`, side);
+        const tag = TRAITS.has(fouler, 'hard') ? this.traitNote(fouler, 'hard') + ' в своём стиле' : TRAITS.has(fouler, 'hothead') ? this.traitNote(fouler, 'hothead') + ' вспылил' : this.pname(fouler);
+        this.say('foul', `Фол! ${tag}: сбивает ${this.pname(victim)} ${where}.${TRAITS.has(victim, 'diver') ? ' (а был ли контакт?..)' : ''}`, side);
       }
       if (card === 'yellow') {
         fouler.m.yc++; me.st.yc++; fouler.m.perf -= 0.3;
@@ -471,15 +554,17 @@
         this.sendOff(side, fouler);
         fx.push({ k: 'event', text: 'УДАЛЕНИЕ!' });
       }
+      this.dissent(side, arp === 4 ? 1.6 : 1, fx);
       // травма
-      if (victim && U.rnd() < 0.05) {
+      if (victim && U.rnd() < 0.05 * this.pm(victim, 'injury')) {
         victim.m.inj = true; victim.m.fit = Math.min(victim.m.fit, 30);
-        this.say('injury', `${this.pname(victim)} получает травму и хромает...`, aSide);
+        this.say('injury', TRAITS.has(victim, 'glass') ? `${this.traitNote(victim, 'glass')} снова травмирован... Хрупкий, как стекло.` : `${this.pname(victim)} получает травму и хромает...`, aSide);
         if (G.AI && this.t[aSide].ctrl === 'ai') G.AI.handleInjury(this, aSide, victim);
       }
       if (arp === 4 && U.rnd() < 0.55) {
         fx.push({ k: 'event', text: 'ПЕНАЛЬТИ!' });
         this.say('penalty', `ПЕНАЛЬТИ! Судья без колебаний показывает на точку!`, aSide);
+        this.dissent(side, 2, fx);
         this.pending = { type: 'penalty', side: aSide };
         if (!this.interactive || (this.t.home.ctrl === 'ai' && this.t.away.ctrl === 'ai')) {
           this.pendingAuto = true;
@@ -490,6 +575,27 @@
       } else {
         this.mom += 25;
         if (this.log && U.rnd() < 0.5) this.say('info', `${opp.club.name} быстро разыгрывает штрафной.`, aSide);
+      }
+    }
+
+    /* Пререкания с судьёй (особенность «Спорит с судьями») */
+    dissent(side, k, fx) {
+      const ts = this.t[side];
+      for (const p of this.withTrait(side, 'argue')) {
+        if (p.m.off) continue;
+        const leaders = this.withTrait(side, 'leader').filter(l => l !== p);
+        const chance = this.padd(p, 'dissent') * k * (leaders.length ? 0.5 : 1);
+        if (U.rnd() >= chance) continue;
+        if (p.m.yc >= 1) {
+          p.m.yc++; p.m.rc = true; ts.st.yc++; ts.st.rc++; p.m.perf -= 1.5;
+          this.say('red', `${this.traitNote(p, 'argue')} не унимается — вторая жёлтая за пререкания! Удаление!`, side, { player: p.name });
+          if (fx) fx.push({ k: 'event', text: 'УДАЛЕНИЕ!' });
+          this.sendOff(side, p);
+        } else {
+          p.m.yc++; ts.st.yc++; p.m.perf -= 0.3;
+          this.say('yellow', `${this.traitNote(p, 'argue')} спорит с судьёй — жёлтая за пререкания.`, side, { player: p.name });
+        }
+        break;
       }
     }
 
@@ -505,27 +611,34 @@
     pickShooter(side, kind) {
       const list = this.t[side].onPitch.filter(x => x.p && x.slot.role !== 'GK');
       if (kind === 'pen' || kind === 'fk') {
-        return list.map(x => x.p).sort((a, b) => (b.a.sho + b.a.com) - (a.a.sho + a.a.com))[0];
+        const key = kind === 'pen' ? 'penTaker' : 'fkTaker';
+        return list.map(x => x.p).sort((a, b) => (this.pa(b, 'sho') + this.pa(b, 'com') + this.padd(b, key) * 12) - (this.pa(a, 'sho') + this.pa(a, 'com') + this.padd(a, key) * 12))[0];
       }
       const attr = kind === 'header' ? 'pos' : 'sho';
-      const ph = kind === 'long' ? 'mid' : 'front';
-      return U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[ph] + 0.08, 1.5) * Math.pow(x.p.a[attr], 1.5)).p;
+      const ph = kind === 'long' || kind === 'vlong' ? 'mid' : 'front';
+      const kw = { box: 'boxW', long: 'longW', vlong: 'longW', header: 'headerW' }[kind];
+      return U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[ph] + 0.08, 1.5) * Math.pow(this.pa(x.p, attr), 1.5) * this.pm(x.p, 'shotW') * this.pm(x.p, kw)).p;
     }
 
-    shoot(side, kind, n, step, fx, ctx) {
+    shoot(side, kind, n, step, fx, ctx, forced) {
       ctx.shotTaken = true;
       const me = this.t[side], opp = this.t[OTHER(side)];
-      const shooter = this.pickShooter(side, kind);
+      const shooter = forced || this.pickShooter(side, kind);
       if (!shooter) return;
       const gk = this.gkVal(OTHER(side));
       let q;
       if (kind === 'box') q = CFG.boxShot + CFG.boxShotPerGem * (n - 3);
       else if (kind === 'long') q = CFG.longShot + CFG.longShotPerGem * (n - 4) + (me.tac.plan === 'direct' ? 0.03 : 0);
       else if (kind === 'header') q = CFG.header + 0.03 * (n - 3) * (me.tac.plan === 'wings' ? 1.3 : 1);
-      else if (kind === 'fk') q = 0.07 + (shooter.a.sho - 10) * 0.006;
+      else if (kind === 'fk') q = 0.07 + (this.pa(shooter, 'sho') - 10) * 0.006;
+      else if (kind === 'vlong') q = CFG.longShot * 0.6 + 0.02 * (n - 4);
       q *= 1 + me.shotCharge / 100 * 0.6;
       const f = this.fatF(shooter);
-      const skill = (kind === 'header' ? shooter.a.pos : shooter.a.sho) * 0.7 * f + shooter.a.com * 0.3 * f;
+      const skill = (kind === 'header' ? this.pa(shooter, 'pos') : this.pa(shooter, 'sho')) * 0.7 * f + this.pa(shooter, 'com') * 0.3 * f;
+      // особенности бьющего и соперника
+      const kq = { box: 'boxQ', long: 'longQ', vlong: 'longQ', header: 'headerQ', fk: 'fkQ' }[kind];
+      const oq = { box: 'oppBoxQ', long: 'oppLongQ', vlong: 'oppLongQ', header: 'oppHeaderQ', fk: 'oppLongQ' }[kind];
+      q *= this.pm(shooter, 'q') * this.pm(shooter, kq) * this.tmul(OTHER(side), oq) * this.tmul(OTHER(side), 'oppShotQ');
       q *= Math.pow(R(skill, gk.ref * 0.7 + gk.pos * 0.3), 1.15);
       if (kind !== 'fk') q *= 1 - opp.shield / 260;
       q *= this.atkM(side);
@@ -536,8 +649,8 @@
       q = U.clamp(q, 0.02, 0.72);
       me.st.shots++; me.st.xg += q;
       me.shotCharge = 0;
-      const label = { box: 'удар', long: 'дальний удар', header: 'удар головой', fk: 'штрафной' }[kind];
-      fx.push({ k: 'shot', text: kind === 'long' ? 'ДАЛЬНИЙ УДАР!' : kind === 'header' ? 'УДАР ГОЛОВОЙ!' : kind === 'fk' ? 'ШТРАФНОЙ!' : 'УДАР!', q });
+      const label = { box: 'удар', long: 'дальний удар', vlong: 'удар метров с тридцати пяти', header: 'удар головой', fk: 'штрафной' }[kind];
+      fx.push({ k: 'shot', text: kind === 'long' || kind === 'vlong' ? 'ДАЛЬНИЙ УДАР!' : kind === 'header' ? 'УДАР ГОЛОВОЙ!' : kind === 'fk' ? 'ШТРАФНОЙ!' : 'УДАР!', q });
       const r = U.rnd();
       if (r < q) {
         me.st.onT++;
@@ -556,11 +669,11 @@
         fx.push({ k: 'miss', text: 'МИМО' });
         if (this.log) this.say('miss', `${this.pname(shooter)} — ${label}... ${U.pick(['Мимо ворот!', 'Над перекладиной!', 'Заблокировано защитником!', 'В штангу!!!'])}`, side, { q });
       }
-      const cornerP = (onTarget ? 0.32 : 0.22) + (me.tac.plan === 'wings' ? 0.12 : 0);
+      const cornerP = ((onTarget ? 0.32 : 0.22) + (me.tac.plan === 'wings' ? 0.12 : 0)) * this.tmul(side, 'cornerP');
       if (U.rnd() < cornerP) {
         me.st.corners++;
         this.setPiece = { side, type: 'corner', created: this.moveNo };
-        me.shotCharge = 20 + (me.tac.plan === 'wings' ? 15 : 0);
+        me.shotCharge = 20 + (me.tac.plan === 'wings' ? 15 : 0) + this.tadd(side, 'cornerCharge');
         this.ball = side === 'home' ? 4 : 0;
         opp.pressure = 0;
         fx.push({ k: 'event', text: 'УГЛОВОЙ' });
@@ -569,7 +682,7 @@
         // мяч у вратаря — он вводит его в игру
         this.ball = side === 'home' ? 3 : 1;
         this.turnover(OTHER(side), 'shot', fx);
-        this.mom = 15 * R(gk.pas, 10);
+        this.mom = 15 * R(gk.pas, 10) * this.tmul(OTHER(side), 'gkDist');
       }
       ctx.stopped = true;
     }
@@ -582,7 +695,7 @@
       if (kind !== 'pen' && kind !== 'fk' && U.rnd() < 0.78) {
         const list = me.onPitch.filter(x => x.p && x.p !== scorer && x.slot.role !== 'GK');
         if (list.length) {
-          assist = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w.front + 0.1, 1.5) * Math.pow(x.p.a[kind === 'header' ? 'pas' : U.pick(['pas', 'dri'])], 2)).p;
+          assist = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w.front + 0.1, 1.5) * Math.pow(this.pa(x.p, kind === 'header' ? 'pas' : U.pick(['pas', 'dri'])), 2) * this.pm(x.p, 'assistW')).p;
           assist.m.assists++; assist.m.perf += 0.55;
         }
       }
@@ -590,8 +703,10 @@
       const g = { side, min: this.minuteLabel(), scorer: scorer.name, scorerId: scorer.id, assist: assist ? assist.name : null, assistId: assist ? assist.id : null, kind };
       this.goals.push(g);
       fx.push({ k: 'goal', text: 'ГОЛ!', goal: g });
-      const how = { box: U.pick(['пробивает в угол', 'расстреливает ворота', 'хладнокровно закатывает', 'бьёт под перекладину']), long: 'выстреливает издали — прямо в девятку', header: 'замыкает подачу головой', fk: 'исполняет штрафной идеально', pen: 'реализует пенальти' }[kind];
-      this.say('goal', `ГОООЛ! ${scorer.name} ${how}!${assist ? ' Ассист: ' + assist.name + '.' : ''} ${this.score.home}:${this.score.away}`, side, { goal: g });
+      const how = { box: U.pick(['пробивает в угол', 'расстреливает ворота', 'хладнокровно закатывает', 'бьёт под перекладину']), long: 'выстреливает издали — прямо в девятку', vlong: 'рискует из центра поля — и попадает!!!', header: 'замыкает подачу головой', fk: 'исполняет штрафной идеально', pen: 'реализует пенальти' }[kind];
+      const aNote = assist && TRAITS.has(assist, 'vision') ? ` Передача от ${this.traitNote(assist, 'vision')} — увидел то, что не видел никто.` : assist ? ' Ассист: ' + assist.name + '.' : '';
+      const sNote = TRAITS.has(scorer, 'clutch') && this.minute() >= 75 ? ' Снова решает в концовке!' : TRAITS.has(scorer, 'bigGame') && this.cond(side, 'strongOpp') ? ' Большие матчи — его стихия!' : '';
+      this.say('goal', `ГОООЛ! ${scorer.name} ${how}!${aNote}${sNote} ${this.score.home}:${this.score.away}`, side, { goal: g });
       // розыгрыш с центра
       this.ball = 2; this.poss = OTHER(side); this.mom = 0;
       me.pressure = 0; opp.pressure = 0; me.shotCharge = 0; opp.shotCharge = 0;
@@ -613,12 +728,13 @@
       const fx = [];
       me.st.shots++; me.st.xg += 0.76;
       let goal;
-      const comF = (kicker.a.com * this.fatF(kicker) - 10) / 100;
+      const comF = (this.pa(kicker, 'com') * this.fatF(kicker) - 10) / 100;
+      const trF = (gk.p ? this.padd(gk.p, 'penSave') : 0) - this.padd(kicker, 'penQ');
       if (kDir === gDir) {
-        const saveP = kDir === 1 ? 0.85 : U.clamp(0.55 + (gk.ref - kicker.a.sho) / 40, 0.3, 0.8);
+        const saveP = kDir === 1 ? 0.85 : U.clamp(0.55 + (gk.ref - this.pa(kicker, 'sho')) / 40 + trF, 0.25, 0.9);
         goal = U.rnd() > saveP;
       } else {
-        goal = U.rnd() < U.clamp(0.9 + comF, 0.75, 0.98);
+        goal = U.rnd() < U.clamp(0.9 + comF + this.padd(kicker, 'penQ') * 0.4, 0.75, 0.98);
       }
       let result;
       if (goal) {
@@ -629,7 +745,7 @@
         const saved = kDir === gDir;
         if (saved) { me.st.onT++; opp.st.saves++; if (gk.p) { gk.p.m.perf += 0.8; gk.p.m.saves++; } }
         kicker.m.perf -= 0.6;
-        this.say(saved ? 'save' : 'miss', saved ? `${gk.p ? gk.p.name : 'Вратарь'} ПАРИРУЕТ ПЕНАЛЬТИ! ${kicker.name} не смог!` : `${kicker.name} бьёт мимо ворот с пенальти!`, side);
+        this.say(saved ? 'save' : 'miss', saved ? `${gk.p ? (TRAITS.has(gk.p, 'penStopper') ? this.traitNote(gk.p, 'penStopper') : gk.p.name) : 'Вратарь'} ПАРИРУЕТ ПЕНАЛЬТИ! ${kicker.name} не смог!` : `${kicker.name} бьёт мимо ворот с пенальти!`, side);
         this.ball = side === 'home' ? 4 : 0;
         this.turnover(OTHER(side), 'shot', fx);
         result = saved ? 'saved' : 'miss';
@@ -651,7 +767,7 @@
         for (const x of ts.onPitch) {
           if (!x.p) continue;
           const role = x.slot.role === 'GK' ? 0.25 : 1;
-          x.p.m.fit = Math.max(5, x.p.m.fit - drain * role * (1.45 - x.p.a.sta / 20 * 0.9) * (0.9 + 0.2 * U.rnd()) * (24 / this.H));
+          x.p.m.fit = Math.max(5, x.p.m.fit - drain * role * this.pm(x.p, 'drain') * (1.45 - x.p.a.sta / 20 * 0.9) * (0.9 + 0.2 * U.rnd()) * (24 / this.H));
         }
         ts.shield = Math.max(0, ts.shield - 3.5);
         ts.pressure = Math.max(0, ts.pressure - 2);

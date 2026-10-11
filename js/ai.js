@@ -23,10 +23,12 @@
     const notes = [];
     const myR = TAC.teamRating(club), oppR = TAC.teamRating(opp);
     const diff = myR - oppR + (isHome ? 0.35 : -0.35);
+    const ctx = { strongOpp: oppR >= 16, weakOpp: oppR <= 14.5, away: !isHome };
+    const HAS = G.TRAITS.has;
     // схема
     let best = null;
     for (const f of Object.keys(TAC.FORMATIONS)) {
-      const xi = TAC.bestXI(club, f);
+      const xi = TAC.bestXI(club, f, { ctx });
       let score = TAC.lineupRating(club, f, xi.lineup);
       const pi = c.formations.indexOf(f);
       if (pi >= 0) score += (pi === 0 ? 0.9 : 0.6) * (1.25 - c.adapt);
@@ -76,6 +78,8 @@
     if (plan === 'gegenpress') pressing = Math.max(pressing, 1.6);
     if (plan === 'park') pressing = Math.min(pressing, 0.8);
     let line = c.line;
+    const oppRunners = oppXi.lineup.map(id => TAC.playerMap(opp)[id]).filter(p => p && (HAS(p, 'runner') || HAS(p, 'counterKing')));
+    if (oppRunners.length >= 2 && line >= 1.5 && c.adapt > 0.4) { line -= 0.7; notes.push(`У соперника ${oppRunners.length} игрока, любящих забегания (${oppRunners.map(p => p.name).join(', ')}), — без высокой линии.`); }
     if (oprof.fwPac > prof.dfPac + 1.5) { line -= 0.8 * c.adapt; if (c.adapt > 0.4) notes.push('У соперника быстрые форварды — линию обороны опускаем.'); }
     if (plan === 'park') line = Math.min(line, 0.6);
     const tactics = {
@@ -83,8 +87,16 @@
       pressing: U.clamp(Math.round(pressing), 0, 2), line: U.clamp(Math.round(line), 0, 2),
       lineup: best.xi.lineup, bench: best.xi.bench
     };
-    // ротация
+    // особенности в составе
     const map = TAC.playerMap(club);
+    const xiP = best.xi.lineup.map(id => map[id]).filter(Boolean);
+    const bg = xiP.filter(p => ctx.strongOpp ? HAS(p, 'bigGame') : ctx.weakOpp ? HAS(p, 'flatTrack') : false);
+    if (bg.length) notes.push(`${ctx.strongOpp ? 'Против фаворита' : 'Против слабого'} ставка на ${bg.map(p => p.name).join(', ')} (${ctx.strongOpp ? '⭐ любит большие матчи' : '🐯 хорош против слабых'}).`);
+    const benched = club.players.filter(p => TAC.available(p) && !best.xi.lineup.includes(p.id) && ((ctx.away && HAS(p, 'homeBird')) || (ctx.strongOpp && HAS(p, 'flatTrack'))) && TAC.overall(p) > myR);
+    if (benched.length) notes.push(`${benched[0].name} начнёт в запасе: ${HAS(benched[0], 'homeBird') ? '🏠 в гостях он не тот' : '🐯 не тянет матчи с грандами'}.`);
+    const pens = xiP.filter(p => HAS(p, 'penalty'));
+    if (pens.length) notes.push(`Пенальти бьёт ⚽ ${pens[0].name}.`);
+    // ротация
     const rested = club.players.filter(p => TAC.available(p) && p.fit < 75 && TAC.overall(p) > myR - 0.5 && !best.xi.lineup.includes(p.id));
     if (rested.length) notes.push(`Ротация: отдых для ${rested.slice(0, 2).map(p => p.name).join(', ')}.`);
     tactics.notes = notes;
@@ -133,7 +145,8 @@
     const diff = match.score[side] - match.score[match.other(side)];
     // замены уставших
     if (ts.subsLeft > 0 && min >= Math.max(46, c.subAt - 8) && match.moveNo - m.lastSubMove >= 3) {
-      const tired = ts.onPitch.filter(x => x.p && x.slot.role !== 'GK' && (x.p.m.fit < 60 - (1 - c.temper) * 6 || x.p.m.inj || (x.p.m.yc && min < 75 && c.adapt > 0.6 && x.p.m.fit < 75)))
+      const risky = p => G.TRAITS.has(p, 'argue') || G.TRAITS.has(p, 'hothead') || G.TRAITS.has(p, 'hard');
+      const tired = ts.onPitch.filter(x => x.p && x.slot.role !== 'GK' && (x.p.m.fit < 60 - (1 - c.temper) * 6 || x.p.m.inj || (x.p.m.yc && min < 75 && c.adapt > 0.6 && x.p.m.fit < 75) || (x.p.m.yc && risky(x.p) && min >= 50) || (G.TRAITS.has(x.p, 'nervous') && min >= 70 && diff <= 0 && c.adapt > 0.4)))
         .sort((a, b) => a.p.m.fit - b.p.m.fit);
       if (tired.length) {
         const x = tired[0];
@@ -142,7 +155,7 @@
         if (min >= 70 && diff > 0 && x.p.pos === 'FW' && c.adapt > 0.4) line = 'DF';
         const sub = bestSub(ts, x.p, line);
         if (sub) {
-          const why = x.p.m.inj ? 'вынужденная замена' : x.p.m.yc && x.p.m.fit >= 60 ? 'страховка от второй жёлтой' : line !== x.p.pos ? (line === 'FW' ? 'нужен ещё один нападающий' : 'укрепляем оборону') : 'свежие ноги';
+          const why = x.p.m.inj ? 'вынужденная замена' : x.p.m.yc && risky(x.p) ? 'горячая голова с жёлтой — от греха подальше' : G.TRAITS.has(x.p, 'nervous') && min >= 70 ? 'нервы подводят в концовке' : x.p.m.yc && x.p.m.fit >= 60 ? 'страховка от второй жёлтой' : line !== x.p.pos ? (line === 'FW' ? 'нужен ещё один нападающий' : 'укрепляем оборону') : 'свежие ноги';
           match.substitute(side, x.p.id, sub.id, true);
           match.say('sub', `${ts.coach.name} меняет: ${sub.name} вместо ${x.p.name} (${why}).`, side);
           m.lastSubMove = match.moveNo;

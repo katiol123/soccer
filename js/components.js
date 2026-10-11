@@ -58,6 +58,30 @@
     return { el: box, body, close, result };
   };
 
+  /* Значки особенностей игрока (с подсказкой) */
+  UI.traitIcons = (p) => {
+    const s = el('span.trs');
+    (p.tr || []).forEach(id => {
+      const t = G.TRAITS.LIST[id];
+      if (t) s.appendChild(el('i.tr.' + toneCls(t.tone), { text: t.i, title: `${t.n} — ${t.d}` }));
+    });
+    return s;
+  };
+  const toneCls = t => t === '+' ? 'pos' : t === '−' ? 'neg' : 'mix';
+  UI.traitCard = (id) => {
+    const t = G.TRAITS.LIST[id];
+    return el('div.trc.' + toneCls(t.tone), null, [el('span.trc-i', { text: t.i }), el('div', null, [el('b', { text: t.n }), el('p', { text: t.d })])]);
+  };
+  /* Справочник всех особенностей */
+  UI.traitsGuide = () => {
+    const box = el('div.tr-guide');
+    box.appendChild(el('p', { text: 'У каждого игрока может быть до трёх особенностей. Они срабатывают, пока игрок на поле, и меняют расчёты матча: силу блоков, удары, фолы, карточки, усталость, травмы. Зелёные — полезные, красные — вредные, жёлтые — палка о двух концах.' }));
+    const grid = el('div.tr-grid');
+    Object.keys(G.TRAITS.LIST).forEach(id => grid.appendChild(UI.traitCard(id)));
+    box.appendChild(grid);
+    return UI.modal({ title: `Особенности игроков (${Object.keys(G.TRAITS.LIST).length})`, content: box, wide: true, buttons: [{ text: 'Закрыть', cls: 'ghost' }] });
+  };
+
   UI.attrCell = (v) => {
     const s = el('span.attr', { text: v });
     s.style.setProperty('--ac', U.attrColor(v));
@@ -100,6 +124,12 @@
       attrs.appendChild(el('div.pc-attr', { title: a.d }, [el('span', { text: a.n }), bar, UI.attrCell(v)]));
     }
     content.appendChild(attrs);
+    if (p.tr && p.tr.length) {
+      content.appendChild(el('div.pc-trh', null, [el('span', { text: 'Особенности' }), el('button.btn.ghost.small', { text: 'Все особенности', onclick: () => UI.traitsGuide() })]));
+      const tl = el('div.pc-traits');
+      p.tr.forEach(id => tl.appendChild(UI.traitCard(id)));
+      content.appendChild(tl);
+    } else content.appendChild(el('div.pc-trh', null, [el('span', { text: 'Особенностей нет — играет «по учебнику»' })]));
     const s = p.st;
     content.appendChild(el('div.pc-stats', null, [
       stat('Матчи', s.apps), stat('Голы', s.goals), stat('Ассисты', s.assists), stat('Ср. оценка', s.apps ? (s.rsum / s.apps).toFixed(2) : '—'), stat('ЖК', s.yc), stat('Свежесть', Math.round(p.fit) + '%')
@@ -147,7 +177,8 @@
           const fit = x.p.m ? x.p.m.fit : x.p.fit;
           chip.append(
             el('span.chip-num', { text: x.p.num, style: { background: model.club.c1, color: GFX.isLight(model.club.c1) ? '#111' : '#fff', borderColor: model.club.c2 } }),
-            el('span.chip-name', { text: shortName(x.p.name) }),
+            el('span.chip-name', { text: shortName(x.p.name), title: (x.p.tr || []).map(id => G.TRAITS.LIST[id].i + ' ' + G.TRAITS.LIST[id].n).join('\n') }),
+            UI.traitIcons(x.p),
             el('span.chip-meta', null, [el('b', { text: x.slot.label }), el('i', { text: r.toFixed(1), style: { color: U.attrColor(r) } })]),
             UI.fitBar(fit)
           );
@@ -196,7 +227,7 @@
       model.getBench().forEach(p => {
         const fit = p.m ? p.m.fit : p.fit;
         const b = el('button.bench-p' + (selected && selected.kind === 'bench' && selected.p === p ? '.sel' : ''), { onclick: () => clickBench(p) }, [
-          el('span.bp-pos', { text: UI.posShort(p.pos) }), el('span.bp-name', { text: p.name }), el('span.bp-ovr', { text: UI.ovr(p).toFixed(1), style: { color: U.attrColor(UI.ovr(p)) } }), UI.fitBar(fit)
+          el('span.bp-pos', { text: UI.posShort(p.pos) }), el('span.bp-name', { text: p.name }), UI.traitIcons(p), el('span.bp-ovr', { text: UI.ovr(p).toFixed(1), style: { color: U.attrColor(UI.ovr(p)) } }), UI.fitBar(fit)
         ]);
         bl.appendChild(b);
       });
