@@ -156,6 +156,7 @@
     const table = standings(st);
     st.history = st.history || [];
     st.history.push({ season: st.seasonName, champion: table[0].id, user: st.userClub ? table.findIndex(r => r.id === st.userClub) + 1 : null });
+    if (G.TR) G.TR.endLoans(st);
     G.FIN.seasonEnd(st, table);
     st.season++;
     const y = 2024 + st.season;
@@ -189,7 +190,9 @@
     const grade = apps < 5 ? 'few' : avg > 7.0 ? 'good' : avg < 6.3 ? 'bad' : 'ok';
     const play = U.clamp(apps / 19, 0.25, 1);
     const pro = p.h ? p.h.pro : 10;
-    const perfK = { good: 1.5, ok: 1, bad: 0.55, few: 0.8 }[grade] * (0.8 + pro * 0.02);
+    const loanK = p.loanExp >= 15 ? 1.25 : p.loanExp >= 8 ? 1.1 : 1; // практика в аренде ускоряет рост
+    p.loanExp = 0;
+    const perfK = { good: 1.5, ok: 1, bad: 0.55, few: 0.8 }[grade] * (0.8 + pro * 0.02) * loanK;
     let total = 0;
     for (const k in p.a) {
       if (k === 'ref' && p.pos !== 'GK') continue;

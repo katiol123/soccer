@@ -114,7 +114,13 @@
   }
 
   /* ---------- клуб ---------- */
-  function wageBill(club) { return U.sum(club.players, p => p.wage || 0); }        // тыс./нед
+  /* Зарплатная ведомость: свои игроки, арендованные (доля арендатора) и отданные в аренду (остаток платит владелец) */
+  function wageBill(club) {
+    let s = 0;
+    for (const p of club.players) s += (p.wage || 0) * (p.loan && p.loan.to === club.id ? p.loan.share : 1);
+    for (const l of (club.loansOut || [])) s += l.wage * (1 - l.share);
+    return Math.round(s);
+  }
   const yearly = w => w * 52 / 1000;                                              // тыс./нед → млн/год
   function squadValue(club) { return Math.round(U.sum(club.players, value)); }
   function ticket(club) { return 40 + (club.str - 10) * 10; }                     // £ за билет
@@ -192,6 +198,7 @@
       c.fin.hist.push(c.fin.balance);
       if (c.fin.hist.length > 80) c.fin.hist.shift();
     }
+    if (G.TR) G.TR.syncLoanWages(st);
     moodRound(st);
     if (st.userClub) { boardRound(st); contractReminder(st); }
   }
@@ -200,7 +207,7 @@
   function contractReminder(st) {
     if (st.round !== 24 && st.round !== 32) return;
     const club = st.clubs.find(c => c.id === st.userClub);
-    const exp = club.players.filter(p => p.contract <= 1);
+    const exp = club.players.filter(p => p.contract <= 1 && !(p.loan && p.loan.to === club.id)).concat(G.TR ? G.TR.loansOut(st, club.id).map(x => x.p).filter(p => p.contract <= 1) : []);
     if (exp.length) st.news.push({ r: st.round, text: `✍ У ${exp.length} ${U.plural(exp.length, 'игрока', 'игроков', 'игроков')} контракт истекает летом: ${exp.slice(0, 5).map(p => p.name).join(', ')}${exp.length > 5 ? '…' : ''}. Продлите их в разделе «Финансы», иначе они уйдут бесплатно.` });
   }
 

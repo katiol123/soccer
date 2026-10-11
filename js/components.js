@@ -156,6 +156,10 @@
         el('div', null, [el('small', { text: 'Зарплата' }), el('b', { text: G.FIN.fmtW(p.wage) })]),
         el('div' + (p.contract <= 1 ? '.warn' : ''), null, [el('small', { text: 'Контракт' }), el('b', { text: p.contract <= 0 ? 'истёк' : `ещё ${p.contract} ${U.plural(p.contract, 'сезон', 'сезона', 'сезонов')}` })])
       ]);
+      if (p.loan) {
+        const fromC = (G.App && G.App.st ? G.App.st.clubs : []).find(c => c.id === p.loan.from);
+        fr.appendChild(el('div', null, [el('small', { text: 'Аренда' }), el('b', { text: `из «${fromC ? fromC.name : '?'}» до конца сезона` })]));
+      }
       const ml = G.FIN.moodLabel(p.mood == null ? 60 : p.mood);
       fr.appendChild(el('div', null, [el('small', { text: 'Настроение' }), el('b', { text: `${ml[1]} ${ml[0]}` })]));
       if (UI.buyHook && UI.buyHook.can(p, club)) fr.appendChild(el('button.btn.small.primary', { text: '💰 Сделать предложение', onclick: () => { md.close(); UI.buyHook.open(p); } }));

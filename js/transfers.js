@@ -55,6 +55,7 @@
     return Math.max(0.3, Math.round(FIN().value(p) * k * 10) / 10);
   }
   function notForSale(st, seller, p) {
+    if (p.loan) return `Игрок в аренде (принадлежит «${(st.clubs.find(c => c.id === p.loan.from) || {}).name}»).`;
     if (posCount(seller, p.pos) <= MIN_POS[p.pos]) return 'Клубу некем заменить игрока на этой позиции.';
     if (status(seller, p) === 'key' && (seller.fin.target || 10) <= 6 && !aiListed(seller, p)) return 'Ключевой игрок клуба — не продаётся.';
     return null;
@@ -203,7 +204,7 @@
     m.offers = m.offers.filter(o => o.expires >= st.round && findPlayer(st, o.pid) && findPlayer(st, o.pid).c === me);
     if (m.offers.length >= 4) return;
     const myCore = core(me);
-    const cands = me.players.filter(p => posCount(me, p.pos) > MIN_POS[p.pos] && !m.offers.some(o => o.pid === p.id));
+    const cands = me.players.filter(p => !p.loan && posCount(me, p.pos) > MIN_POS[p.pos] && !m.offers.some(o => o.pid === p.id));
     for (const c of st.clubs) {
       if (c.id === st.userClub || m.offers.length >= 4) continue;
       const cc = core(c);
@@ -300,7 +301,7 @@
         for (const seller of st.clubs) {
           if (seller === buyer || seller.id === st.userClub || seller.players.length <= 22) continue;
           for (const p of seller.players) {
-            if (p.pos !== nd.pos || p.age > 31 || p.moved === w.id || p.joined === st.season) continue;
+            if (p.pos !== nd.pos || p.age > 31 || p.moved === w.id || p.joined === st.season || p.loan) continue;
             const ovr = TAC.overall(p);
             if (ovr < (nd.lack ? nd.cc - 2.5 : nd.worst + 0.5)) continue;
             if (notForSale(st, seller, p)) continue;
@@ -368,7 +369,8 @@
     const m = market(st);
     const w = windowState(st);
     if (!w.open) { if (m.offers.length) m.offers = []; }
-    else { aiMarket(st); aiBids(st); }
+    else { aiMarket(st); aiLoans(st); aiBids(st); }
+    checkPromises(st);
     requests(st);
     // отказ выставить просящего о трансфере
     if (st.userClub) club(st, st.userClub).players.forEach(p => { if (p.treq && !m.listed.includes(p.id)) p.mood = Math.max(0, (p.mood || 30) - 1.5); });
@@ -389,7 +391,7 @@
         if (f.q && !p.name.toLowerCase().includes(f.q.toLowerCase())) continue;
         const nfs = !!notForSale(st, c, p);
         if (f.listedOnly && nfs) continue;
-        out.push({ p, c, ovr, v, listed: aiListed(c, p), st: status(c, p), nfs });
+        out.push({ p, c, ovr, v, listed: aiListed(c, p), st: status(c, p), nfs, onLoan: !!p.loan });
       }
     }
     const k = f.sort || 'ovr';
@@ -397,5 +399,199 @@
     return out;
   }
 
-  G.TR = { aiMarket, weakest, needs, market, windowState, status, STATUS_TXT, aiListed, asking, notForSale, neg, bidClub, acceptCounter, terms, offerTerms, list, answerOffer, afterRound, search, findPlayer, MAX_SQUAD, MIN_POS };
+
+  /* =================== АРЕНДЫ (этап 3) =================== */
+  const PROMISE = { start: { n: 'Игрок основы', k: 0.6, bonus: 1.2 }, rot: { n: 'Ротация', k: 0.3, bonus: 0.5 }, none: { n: 'Без гарантий', k: 0, bonus: 0 } };
+  const MAX_LOANS_IN = 4;
+
+  function loansOut(st, cid) { const out = []; st.clubs.forEach(c => c.players.forEach(p => { if (p.loan && p.loan.from === cid) out.push({ p, c }); })); return out; }
+  function loansIn(c) { return c.players.filter(p => p.loan && p.loan.to === c.id); }
+
+  /* Пересчёт «чужих» зарплат: владелец платит (1 − доля) за отданных в аренду */
+  function syncLoanWages(st) {
+    st.clubs.forEach(c => { c.loansOut = []; });
+    st.clubs.forEach(c => c.players.forEach(p => {
+      if (!p.loan) return;
+      const owner = club(st, p.loan.from);
+      if (owner) owner.loansOut.push({ pid: p.id, wage: p.wage, share: p.loan.share });
+    }));
+  }
+
+  /* Игровое время в аренде: сколько матчей сыграно из возможных */
+  function loanMinutes(st, p) {
+    const played = Math.max(0, (p.st.apps || 0) - (p.loan.apps0 || 0));
+    const possible = Math.max(1, st.round - (p.loan.round0 || 0));
+    return { played, possible, share: played / possible };
+  }
+
+  /* Перемещение игрока в аренду */
+  function moveLoan(st, p, from, to, terms) {
+    from.players = from.players.filter(x => x !== p); delete from._map;
+    p.loan = { from: from.id, to: to.id, share: terms.share, promise: terms.promise, option: terms.option || null, fee: terms.fee || 0, season: st.season, round0: st.round, apps0: p.st.apps, num0: p.num };
+    p.num = freeNumber(to);
+    to.players.push(p); delete to._map;
+    p.moved = windowState(st).id;
+    if (terms.fee) { to.fin.balance -= terms.fee; to.fin.season.transfers = (to.fin.season.transfers || 0) - terms.fee; from.fin.balance += terms.fee; from.fin.season.transfers = (from.fin.season.transfers || 0) + terms.fee; }
+    if (terms.promise === 'start') p.mood = Math.min(100, (p.mood || 60) + 10);
+    market(st).history.push({ season: st.seasonName, round: st.round + 1, pid: p.id, name: p.name, from: from.id, to: to.id, fee: terms.fee || 0, loan: true });
+    syncLoanWages(st);
+    if (st.userClub) G.LEAGUE.fixUserTactics(st);
+  }
+
+  /* Возврат из аренды */
+  function returnLoan(st, p, reason) {
+    const cur = club(st, p.loan.to), owner = club(st, p.loan.from);
+    if (!cur || !owner) { p.loan = null; return; }
+    cur.players = cur.players.filter(x => x !== p); delete cur._map;
+    const used = new Set(owner.players.map(x => x.num));
+    p.num = used.has(p.loan.num0) ? freeNumber(owner) : p.loan.num0;
+    owner.players.push(p); delete owner._map;
+    p.loanExp = Math.max(0, (p.st.apps || 0) - (p.loan.apps0 || 0));
+    p.loanLast = { to: cur.id, apps: p.loanExp, season: st.seasonName, reason };
+    p.loan = null;
+    syncLoanWages(st);
+  }
+
+  /* Исполнение опции выкупа */
+  function exerciseOption(st, p) {
+    const L = p.loan; if (!L || !L.option) return { ok: false, msg: 'Опции выкупа нет.' };
+    const owner = club(st, L.from), cur = club(st, L.to);
+    if (cur.fin.transferBudget != null && cur.id === st.userClub && L.option > cur.fin.transferBudget) return { ok: false, msg: 'Не хватает трансферного бюджета.' };
+    p.loan = null;
+    cur.players = cur.players.filter(x => x !== p); delete cur._map;
+    owner.players.push(p); delete owner._map; // complete() снимет игрока с владельца
+    complete(st, p, owner, cur, L.option, p.wage, p.contract < 2 ? 3 : p.contract, { quiet: cur.id !== st.userClub && owner.id !== st.userClub });
+    syncLoanWages(st);
+    return { ok: true, msg: `«${cur.name}» выкупает ${p.name} за ${FIN().fmtM(L.option)}.` };
+  }
+
+  /* --- отдать своего игрока в аренду: какие клубы заинтересованы --- */
+  function loanOutOffers(st, pid, terms) {
+    const me = club(st, st.userClub), p = me.players.find(x => x.id === pid);
+    if (!p) return { error: 'Игрок не найден.' };
+    if (!windowState(st).open) return { error: 'Трансферное окно закрыто.' };
+    if (p.loan) return { error: 'Игрок сам находится в аренде.' };
+    if (posCount(me, p.pos) <= MIN_POS[p.pos]) return { error: 'Некем заменить игрока на этой позиции.' };
+    const h = p.h || {};
+    if (terms.promise === 'none' && h.amb >= 14) return { error: `${p.name} не хочет сидеть в запасе в другом клубе — нужна гарантия игрового времени.` };
+    const ovr = TAC.overall(p), out = [];
+    for (const c of st.clubs) {
+      if (c === me || loansIn(c).length >= 2) continue;
+      const same = c.players.filter(x => x.pos === p.pos).sort((a, b) => TAC.overall(b) - TAC.overall(a));
+      const worst = same.length >= STARTERS[p.pos] ? TAC.overall(same[STARTERS[p.pos] - 1]) : 0;
+      const fit = ovr - worst;
+      const needFit = terms.promise === 'start' ? -0.3 : terms.promise === 'rot' ? -1.5 : -3;
+      if (fit < needFit) continue;
+      // сколько готовы платить: чем полезнее игрок и богаче клуб — тем больше
+      let pay = U.clamp(0.35 + fit * 0.18 + (c.fin.balance > 150 ? 0.15 : 0) - (terms.promise === 'start' ? 0.15 : terms.promise === 'rot' ? 0.05 : 0) + (terms.option ? 0.1 : 0), 0, 1);
+      if (terms.option && terms.option < FIN().value(p) * 0.9) pay += 0.1;
+      if (pay + 0.001 < terms.share) continue;
+      const fee = Math.round(Math.max(0, FIN().value(p) * 0.04 * (fit + 1)) * 10) / 10;
+      out.push({ c, pay: Math.round(pay * 100), fee: Math.max(0, Math.min(fee, c.fin.transferBudget || 0)), fit });
+    }
+    out.sort((a, b) => b.fee - a.fee || b.fit - a.fit);
+    return { list: out.slice(0, 6) };
+  }
+  function loanOut(st, pid, toId, terms) {
+    const me = club(st, st.userClub), p = me.players.find(x => x.id === pid), to = club(st, toId);
+    if (!p || !to) return { ok: false, msg: 'Сделка невозможна.' };
+    moveLoan(st, p, me, to, terms);
+    st.news.push({ r: st.round, text: `🤝 ${p.name} отправлен в аренду в «${to.name}» до конца сезона (${PROMISE[terms.promise].n.toLowerCase()}, «${to.name}» платит ${Math.round(terms.share * 100)}% зарплаты${terms.option ? ', опция выкупа ' + FIN().fmtM(terms.option) : ''}).` });
+    return { ok: true, msg: `${p.name} уходит в аренду в «${to.name}».` };
+  }
+
+  /* --- взять в аренду: условия клуба-владельца --- */
+  function loanInTerms(st, pid) {
+    const f = findPlayer(st, pid); if (!f) return { error: 'Игрок не найден.' };
+    const { p, c: owner } = f, me = club(st, st.userClub);
+    if (!windowState(st).open) return { error: 'Трансферное окно закрыто.' };
+    if (p.loan) return { error: 'Игрок уже в аренде.' };
+    if (loansIn(me).length >= MAX_LOANS_IN) return { error: `Не больше ${MAX_LOANS_IN} арендованных игроков.` };
+    if (me.players.length >= MAX_SQUAD) return { error: `В составе уже ${MAX_SQUAD} игроков.` };
+    const s = status(owner, p);
+    const young = p.age <= 22;
+    if (s === 'key' || (s === 'starter' && !young)) return { error: `«${owner.name}» не отдаёт в аренду игроков основы.` };
+    if (posCount(owner, p.pos) <= MIN_POS[p.pos]) return { error: `«${owner.name}» некем заменить игрока.` };
+    if (p.contract <= 1 && !young) return { error: 'У игрока истекает контракт — клуб не видит смысла в аренде.' };
+    const ownerTop = (owner.fin.target || 10) <= 8;
+    const promise = young && ownerTop ? 'start' : young ? 'rot' : 'none';
+    let share = U.clamp(0.5 + (young ? 0.15 : 0) + (ownerTop ? 0.15 : 0) + (s === 'surplus' ? -0.2 : 0), 0.3, 1);
+    const fee = Math.round(FIN().value(p) * (young && ownerTop ? 0.06 : 0.03) * 10) / 10;
+    const option = (s === 'surplus' && !young) || p.age >= 27 ? Math.round(FIN().value(p) * 1.1 * 10) / 10 : null;
+    return { p, owner, terms: { share: Math.round(share * 100) / 100, promise, fee, option } };
+  }
+  function loanIn(st, pid, terms) {
+    const me = club(st, st.userClub), f = findPlayer(st, pid);
+    if (!f) return { ok: false, msg: 'Игрок не найден.' };
+    const add = Math.round(f.p.wage * terms.share);
+    if (FIN().wageBill(me) + add > me.fin.wageBudget) return { ok: false, msg: `Совет не одобрит: зарплатная ведомость превысит бюджет (${me.fin.wageBudget} тыс./нед).` };
+    if (terms.fee > (me.fin.transferBudget || 0)) return { ok: false, msg: 'Не хватает трансферного бюджета на плату за аренду.' };
+    me.fin.transferBudget = Math.round(((me.fin.transferBudget || 0) - terms.fee) * 10) / 10;
+    moveLoan(st, f.p, f.c, me, terms);
+    st.news.push({ r: st.round, text: `🤝 ${f.p.name} переходит в «${me.name}» на правах аренды из «${f.c.name}».` });
+    return { ok: true, msg: `${f.p.name} арендован до конца сезона!` };
+  }
+
+  /* --- аренды между ИИ-клубами: гранды отдают молодёжь за практикой --- */
+  function aiLoans(st) {
+    const w = windowState(st); if (!w.open) return;
+    const m = market(st); m.ail = m.ail || {};
+    const deals = [];
+    for (const owner of st.clubs) {
+      if (owner.id === st.userClub || (owner.fin.target || 10) > 10) continue;
+      const kids = owner.players.filter(p => !p.loan && p.age <= 22 && ['surplus', 'rotation'].includes(status(owner, p)) && posCount(owner, p.pos) > MIN_POS[p.pos] + 1 && p.moved !== w.id);
+      for (const p of kids) {
+        if (U.rnd() > 0.25 || (m.ail[owner.id + w.id] || 0) >= 2) continue;
+        const ovr = TAC.overall(p);
+        const takers = st.clubs.filter(c => c !== owner && c.id !== st.userClub && loansIn(c).length < 2 && c.players.length < 28).map(c => {
+          const same = c.players.filter(x => x.pos === p.pos).sort((a, b) => TAC.overall(b) - TAC.overall(a));
+          const worst = same.length >= STARTERS[p.pos] ? TAC.overall(same[STARTERS[p.pos] - 1]) : 0;
+          return { c, fit: ovr - worst };
+        }).filter(x => x.fit >= -0.8).sort((a, b) => b.fit - a.fit);
+        if (!takers.length) continue;
+        const t = takers[0];
+        moveLoan(st, p, owner, t.c, { share: 0.6, promise: t.fit >= 0 ? 'start' : 'rot', fee: 0, option: null });
+        m.ail[owner.id + w.id] = (m.ail[owner.id + w.id] || 0) + 1;
+        deals.push(`🤝 Аренда за игровой практикой: ${p.name} (${p.age}, ${ovr.toFixed(1)}) из «${owner.name}» в «${t.c.name}».`);
+      }
+    }
+    deals.slice(0, st.userClub ? 2 : 6).forEach(t => st.news.push({ r: st.round, text: t }));
+  }
+
+  /* Зимняя проверка обещаний: если арендатор-пользователь не даёт играть — владелец отзывает игрока */
+  function checkPromises(st) {
+    if (st.round !== 18 || !st.userClub) return;
+    const me = club(st, st.userClub);
+    loansIn(me).forEach(p => {
+      const L = p.loan, need = PROMISE[L.promise].k;
+      if (!need) return;
+      const mm = loanMinutes(st, p);
+      if (mm.share + 0.05 < need) {
+        const owner = club(st, L.from);
+        returnLoan(st, p, 'recall');
+        st.news.push({ r: st.round, text: `📞 «${owner.name}» досрочно отзывает ${p.name} из аренды: обещали ${PROMISE[L.promise].n.toLowerCase()}, а он сыграл ${mm.played} из ${mm.possible}.` });
+        if (st.board) st.board.conf = Math.max(0, st.board.conf - 1);
+      }
+    });
+  }
+
+  /* Конец сезона: опции выкупа и возвращение арендованных */
+  function endLoans(st) {
+    const all = [];
+    st.clubs.forEach(c => c.players.forEach(p => { if (p.loan) all.push(p); }));
+    for (const p of all) {
+      const L = p.loan, cur = club(st, L.to), owner = club(st, L.from);
+      const apps = (p.st.apps || 0) - (L.apps0 || 0), avg = p.st.apps ? p.st.rsum / p.st.apps : 0;
+      if (L.option && cur.id !== st.userClub && apps >= 12 && avg >= 6.9 && L.option <= (cur.fin.transferBudget || 0) * 1.2) {
+        const r = exerciseOption(st, p);
+        if (owner.id === st.userClub || !st.userClub) st.news.push({ r: 0, text: `💰 ${r.msg}` });
+        continue;
+      }
+      returnLoan(st, p, 'end');
+      if (owner.id === st.userClub) st.news.push({ r: 0, text: `↩ ${p.name} вернулся из аренды (играл за «${cur.name}»): ${apps} ${U.plural(apps, 'матч', 'матча', 'матчей')}${apps ? `, средняя оценка ${avg.toFixed(2)}` : ''}.` });
+      if (cur.id === st.userClub) st.news.push({ r: 0, text: `↩ Арендованный ${p.name} вернулся в «${owner.name}».` });
+    }
+  }
+
+  G.TR = { PROMISE, loansOut, loansIn, syncLoanWages, loanMinutes, returnLoan, exerciseOption, loanOutOffers, loanOut, loanInTerms, loanIn, aiLoans, checkPromises, endLoans, aiMarket, weakest, needs, market, windowState, status, STATUS_TXT, aiListed, asking, notForSale, neg, bidClub, acceptCounter, terms, offerTerms, list, answerOffer, afterRound, search, findPlayer, MAX_SQUAD, MIN_POS };
 })(typeof window !== 'undefined' ? window : globalThis);
