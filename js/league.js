@@ -11,12 +11,27 @@
     for (let r = 0; r < n - 1; r++) {
       const rd = [];
       for (let i = 0; i < n / 2; i++) {
-        const a = arr[i], b = arr[n - 1 - i];
-        const flip = (r + i) % 2 === 0;
-        rd.push(flip ? { h: a, a: b } : { h: b, a: a });
+        rd.push({ x: arr[i], y: arr[n - 1 - i] });
       }
       rounds.push(rd);
       arr.splice(1, 0, arr.pop());
+    }
+    // хозяева: чередуем дом/выезд — дома играет тот, у кого меньше домашних и кто был в гостях в прошлом туре
+    const homes = {}, seq = {};
+    ids.forEach(id => { homes[id] = 0; seq[id] = ''; });
+    // штраф за серию: два дома подряд — сильно хочется в гости, два выезда — домой
+    const score = (id, r) => {
+      const t = seq[id].slice(-2);
+      return (t === 'hh' ? 6 : t === 'aa' ? -6 : 0) + (t[1] === 'h' ? 2 : t[1] === 'a' ? -2 : 0) + homes[id] - r / 2;
+    };
+    for (let r = 0; r < rounds.length; r++) {
+      rounds[r] = rounds[r].map(({ x, y }) => {
+        const sx = score(x, r), sy = score(y, r);
+        const xHome = sx < sy || (sx === sy && (r + x.length) % 2 === 0);
+        const h = xHome ? x : y, a = xHome ? y : x;
+        homes[h]++; seq[h] += 'h'; seq[a] += 'a';
+        return { h, a };
+      });
     }
     const second = rounds.map(rd => rd.map(f => ({ h: f.a, a: f.h })));
     return rounds.concat(second).map(rd => rd.map(f => Object.assign(f, { res: null })));
@@ -37,6 +52,7 @@
       st.userTactics = TAC.defaultTactics(c);
       st.news.push({ r: 0, text: `Вы возглавили «${c.name}». Совет директоров ждёт результата!` });
     }
+    G.FIN.init(st);
     return st;
   }
 
@@ -86,6 +102,7 @@
       }
     }
     fixture.res = { hs: match.score.home, as: match.score.away, goals, stats, motm: motm ? motm.name : null, motmR: motm ? motm.m.rating : null, watched: !!match.watched };
+    G.FIN.matchday(st, fixture, standings(st));
     // очистка временных данных
     for (const s of ['home', 'away']) match.t[s].club.players.forEach(p => { delete p.m; });
   }
@@ -100,6 +117,7 @@
       if (p.inj > 0) p.inj--;
       if (p.susp > 0 && playedClubs.has(c.id)) p.susp--;
     }));
+    G.FIN.round(st);
     st.round++;
     if (st.userClub) fixUserTactics(st);
   }
@@ -136,6 +154,7 @@
     const table = standings(st);
     st.history = st.history || [];
     st.history.push({ season: st.seasonName, champion: table[0].id, user: st.userClub ? table.findIndex(r => r.id === st.userClub) + 1 : null });
+    G.FIN.seasonEnd(st, table);
     st.season++;
     const y = 2024 + st.season;
     st.seasonName = y + '/' + String(y + 1).slice(2);
@@ -157,6 +176,7 @@
     const down = pool.filter(x => x.d.total < 0).sort((a, b) => a.d.total - b.d.total).slice(0, 3);
     if (up.length) st.news.push({ r: 0, text: '📈 Прогресс за межсезонье: ' + up.map(x => `${x.p.name} (+${x.d.total}${x.d.avg ? ', ср. ' + x.d.avg.toFixed(2) : ''})`).join(', ') + '.' });
     if (down.length) st.news.push({ r: 0, text: '📉 Сдали: ' + down.map(x => `${x.p.name} (${x.d.total}${x.d.avg ? ', ср. ' + x.d.avg.toFixed(2) : ''})`).join(', ') + '.' });
+    G.FIN.seasonStart(st);
     if (st.userClub) fixUserTactics(st);
   }
 
@@ -210,6 +230,7 @@
       if (!st || st.v !== 1) return null;
       if (G.TRAITS) G.TRAITS.ensure(st.clubs);
       st.clubs.forEach(c => c.players.forEach(p => { if (!p.lastR) { p.lastR = []; p.form = TAC.computeForm(p); } }));
+      G.FIN.init(st);
       return st;
     } catch (e) { return null; }
   }

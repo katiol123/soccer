@@ -13,6 +13,10 @@
 
     init() {
       FX.init();
+      UI.renewHook = {
+        can: (p, club) => this.st && club.id === this.st.userClub && p.contract <= 2,
+        open: (p, club) => this.renewModal(p, club)
+      };
       try { SFX.on = localStorage.getItem('m3-sound') !== 'off'; } catch (e) { /* */ }
       document.addEventListener('pointerdown', () => SFX.ensure(), { once: true });
       this.menu();
@@ -100,6 +104,11 @@
         const expect = r > 16.5 ? 'Чемпионство' : r > 15.8 ? 'Лига чемпионов' : r > 15 ? 'Еврокубки' : r > 14.4 ? 'Середина таблицы' : 'Сохранить прописку';
         detail.append(
           el('div.cd-top', null, [UI.crest(c, 88), el('div', null, [el('h3', { text: c.name }), el('div.cd-sub', { text: `${c.stadium} · ${c.city}` }), UI.stars(r), el('div.cd-exp', { text: 'Цель: ' + expect })])]),
+          el('div.cd-fin', null, [
+            el('div', null, [el('small', { text: 'Бюджет зарплат' }), el('b', { text: c.fin ? G.FIN.fmtW(c.fin.wageBudget) : '—' })]),
+            el('div', null, [el('small', { text: 'Стоимость состава' }), el('b', { text: G.FIN.fmtM(G.FIN.squadValue(c)) })]),
+            el('div', null, [el('small', { text: 'Стадион' }), el('b', { text: Math.round((G.FIN.CAPACITY[c.id] || 30) * 1000).toLocaleString('ru') + ' мест' })])
+          ]),
           el('div.cd-coach', null, [el('small', { text: 'Нынешний тренер (уступит вам место)' }), el('b', { text: `${c.coach.name} (${c.coach.nat})` }), el('p', { text: c.coach.motto }),
             el('div.cd-tags', null, [el('span', { text: c.coach.formations.join(' / ') }), el('span', { text: TAC.PLANS[c.coach.plan].icon + ' ' + TAC.PLANS[c.coach.plan].n })])]),
           el('div.cd-players', null, [el('small', { text: 'Лидеры состава' })].concat(top.map(p => el('div.cd-p', null, [el('span.bp-pos', { text: UI.posShort(p.pos) }), el('span', null, [p.name + (p.star ? ' ★ ' : ' '), UI.traitIcons(p)]), el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })])))),
@@ -132,6 +141,8 @@
         // используем тот же мир, что был показан при выборе
         st.clubs = world;
         if (clubId) st.userTactics = TAC.defaultTactics(LEAGUE.club(st, clubId));
+        st.board = null;
+        G.FIN.init(st);
       }
       this.st = st;
       LEAGUE.save(st);
@@ -149,7 +160,7 @@
       const uc = st.userClub ? LEAGUE.club(st, st.userClub) : null;
       if (uc) { root.style.setProperty('--c1', uc.c1); root.style.setProperty('--c2', uc.c2); }
       const nav = el('nav.hub-nav');
-      const tabs = [['home', 'Главная'], ['squad', uc ? 'Состав и тактика' : 'Клубы'], ['table', 'Таблица'], ['fixtures', 'Календарь'], ['stats', 'Статистика']];
+      const tabs = [['home', 'Главная'], ['squad', uc ? 'Состав и тактика' : 'Клубы'], ['table', 'Таблица'], ['fixtures', 'Календарь'], ['stats', 'Статистика'], ['finance', 'Финансы']];
       tabs.forEach(([k, n]) => nav.appendChild(el('button' + (this.tab === k ? '.on' : ''), { text: n, onclick: () => this.hub(k) })));
       const top = el('header.topbar', null, [
         el('div.tb-brand', { onclick: () => this.gameMenu() }, [el('span.tb-logo', { text: 'К' }), el('span', { text: 'КОМБИНАЦИЯ' })]),
@@ -160,7 +171,7 @@
       root.appendChild(top);
       const body = el('div.hub-body');
       root.appendChild(body);
-      ({ home: () => this.tabHome(body), squad: () => this.tabSquad(body), table: () => this.tabTable(body), fixtures: () => this.tabFixtures(body), stats: () => this.tabStats(body) })[this.tab]();
+      ({ home: () => this.tabHome(body), squad: () => this.tabSquad(body), table: () => this.tabTable(body), fixtures: () => this.tabFixtures(body), stats: () => this.tabStats(body), finance: () => this.tabFinance(body) })[this.tab]();
       this.show(root);
     },
 
@@ -198,6 +209,7 @@
       main.appendChild(this.roundCard());
       // мини-таблица
       side.appendChild(this.miniTable());
+      if (uc && uc.fin) side.appendChild(this.financeMini(uc));
       if (uc) {
         const last = [];
         st.fixtures.slice(0, st.round + 1).forEach(rd => rd.forEach(f => { if (f.res && (f.h === uc.id || f.a === uc.id)) last.push(f); }));
@@ -442,6 +454,7 @@
       r.goals.forEach(g => gl.appendChild(el('div.ft-g.' + g.side, { text: `⚽ ${g.min} ${g.scorer}${g.kind === 'pen' ? ' (пен.)' : ''}${g.assist ? ' (' + g.assist + ')' : ''}` })));
       content.appendChild(gl);
       if (r.motm) content.appendChild(el('div.ft-motm', null, [el('small', { text: 'Игрок матча' }), el('b', { text: `${r.motm} — ${r.motmR}` })]));
+      if (r.att) content.appendChild(el('div.muted', { text: `🏟 ${h.stadium}: ${r.att.toLocaleString('ru')} зрителей`, style: { textAlign: 'center' } }));
       const s = r.stats;
       const tbl = el('div.stats');
       [['Удары', 'shots'], ['В створ', 'onT'], ['xG', 'xg'], ['Угловые', 'corners'], ['Отборы', 'wins'], ['Фолы', 'fouls'], ['Жёлтые', 'yc'], ['Красные', 'rc']].forEach(([n, k]) => {
@@ -580,6 +593,162 @@
       } else body.appendChild(card);
     },
 
+    /* ---------- Финансы ---------- */
+    financeMini(c) {
+      const st = this.st, f = c.fin;
+      const box = el('div.card.fin-mini', { onclick: () => this.hub('finance') }, [el('h3', { text: 'Финансы' })]);
+      box.appendChild(el('div.fm-row', null, [el('span', { text: 'Баланс' }), el('b' + (f.balance < 0 ? '.neg' : ''), { text: G.FIN.fmtM(f.balance) })]));
+      const bill = G.FIN.wageBill(c);
+      box.appendChild(el('div.fm-row', null, [el('span', { text: 'Зарплаты' }), el('b' + (bill > f.wageBudget ? '.neg' : ''), { text: `${bill} / ${f.wageBudget} тыс./нед` })]));
+      if (st.board) box.appendChild(this.boardMeter());
+      const exp = c.players.filter(p => p.contract <= 1).length;
+      if (exp) box.appendChild(el('div.fm-warn', { text: `✍ Истекают контракты: ${exp}` }));
+      return box;
+    },
+
+    boardMeter() {
+      const b = this.st.board;
+      const col = b.conf >= 60 ? '#00ff87' : b.conf >= 35 ? '#ffd23f' : '#ff4d6d';
+      const m = el('div.meter.board-m', null, [el('div.meter-top', null, [el('span', { text: `Доверие совета · цель: ${b.target}-е место` }), el('b', { text: Math.round(b.conf) + '%' })]), el('div.meter-bar', null, [el('i')])]);
+      m.querySelector('i').style.width = b.conf + '%';
+      m.querySelector('i').style.background = col;
+      return m;
+    },
+
+    tabFinance(body) {
+      const st = this.st;
+      const uc = st.userClub ? LEAGUE.club(st, st.userClub) : null;
+      const club = (!uc && this.finClub && LEAGUE.club(st, this.finClub)) || uc || st.clubs[0];
+      const own = club === uc;
+      const f = club.fin;
+      const wrap = el('div.fin-wrap');
+      if (!uc) {
+        const picker = el('div.club-picker');
+        st.clubs.slice().sort((a, b) => b.fin.balance - a.fin.balance).forEach(c => picker.appendChild(el('button' + (c === club ? '.on' : ''), { title: `${c.name}: ${G.FIN.fmtM(c.fin.balance)}`, onclick: () => { this.finClub = c.id; this.hub('finance'); } }, [UI.crest(c, 26)])));
+        wrap.appendChild(picker);
+      }
+      // ключевые показатели
+      const bill = G.FIN.wageBill(club);
+      const kpi = (label, val, sub, cls) => el('div.card.kpi' + (cls ? '.' + cls : ''), null, [el('small', { text: label }), el('b', { text: val }), sub ? el('span', { text: sub }) : null]);
+      const s = f.season;
+      const income = s.tv + s.gate + s.comm + s.prize, expense = s.wages + s.ops;
+      const kpis = el('div.kpis', null, [
+        kpi('Баланс клуба', G.FIN.fmtM(f.balance), `${income + expense >= 0 ? '+' : ''}${(income + expense).toFixed(1)} млн за сезон`, f.balance < 0 ? 'neg' : ''),
+        kpi('Зарплатная ведомость', `£${bill} тыс./нед`, `бюджет £${f.wageBudget} тыс. · ${G.FIN.yearly(bill).toFixed(0)} млн/год`, bill > f.wageBudget ? 'neg' : ''),
+        kpi('Стоимость состава', G.FIN.fmtM(G.FIN.squadValue(club)), `${club.players.length} игроков`),
+        kpi('Стадион', Math.round((G.FIN.CAPACITY[club.id] || 30) * 1000).toLocaleString('ru') + ' мест', `билет ~£${Math.round(G.FIN.ticket(club))}`)
+      ]);
+      wrap.appendChild(kpis);
+      const grid = el('div.fin-grid');
+      // доходы и расходы
+      const led = el('div.card', null, [el('h3', { text: `Сезон ${st.seasonName}: доходы и расходы` })]);
+      const rows = [['Телеправа', s.tv, 'Равная доля каждый тур + премия за место в конце сезона'], ['Билеты', s.gate, 'Каждый домашний матч: вместимость × посещаемость × цена билета'], ['Спонсоры', s.comm, 'Зависят от статуса клуба'], ['Призовые', s.prize, 'В конце сезона: место в таблице и еврокубки (1–6 место)'], ['Зарплаты', s.wages, 'Каждый тур: ведомость × 52 недели / 38 туров'], ['Операционные', s.ops, 'Персонал, инфраструктура, поездки']];
+      const maxAbs = Math.max(1, ...rows.map(r => Math.abs(r[1])));
+      rows.forEach(([n, v, d]) => {
+        const bar = el('div.led-bar', null, [el('i')]);
+        bar.firstChild.style.width = (Math.abs(v) / maxAbs * 100) + '%';
+        bar.firstChild.style.background = v >= 0 ? '#00ff87' : '#ff4d6d';
+        led.appendChild(el('div.led-row', { title: d }, [el('span', { text: n }), bar, el('b', { text: (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1) })]));
+      });
+      led.appendChild(el('div.led-row.total', null, [el('span', { text: 'Итого' }), el('span'), el('b' + (income + expense < 0 ? '.neg' : ''), { text: (income + expense >= 0 ? '+' : '−') + Math.abs(income + expense).toFixed(1) + ' млн' })]));
+      if (f.last) led.appendChild(el('div.muted.small-note', { text: `Прошлый сезон (${f.last.season}, ${f.last.pos}-е место): ${f.last.profit >= 0 ? 'прибыль' : 'убыток'} ${G.FIN.fmtM(Math.abs(f.last.profit))}` }));
+      grid.appendChild(led);
+      // график баланса + совет
+      const side = el('div.fin-side');
+      const ch = el('div.card', null, [el('h3', { text: 'Баланс по турам' })]);
+      const h = f.hist.slice(-40);
+      if (h.length > 1) {
+        const w = 300, hh = 90, mn = Math.min(0, ...h), mx = Math.max(...h), rng = mx - mn || 1;
+        const pts = h.map((v, i) => `${(i / (h.length - 1) * w).toFixed(1)},${(hh - (v - mn) / rng * (hh - 10) - 5).toFixed(1)}`).join(' ');
+        const zero = hh - (0 - mn) / rng * (hh - 10) - 5;
+        ch.appendChild(el('div', { html: `<svg viewBox="0 0 ${w} ${hh}" class="fin-chart" preserveAspectRatio="none"><line x1="0" x2="${w}" y1="${zero}" y2="${zero}" stroke="rgba(255,255,255,.2)" stroke-dasharray="4 4"/><polyline points="${pts}" fill="none" stroke="#00ff87" stroke-width="2.5" stroke-linejoin="round"/></svg>` }));
+        ch.appendChild(el('div.muted.small-note', { text: `от ${G.FIN.fmtM(h[0])} до ${G.FIN.fmtM(h[h.length - 1])}` }));
+      } else ch.appendChild(el('div.muted', { text: 'График появится после первых туров.' }));
+      side.appendChild(ch);
+      if (own && st.board) {
+        const bc = el('div.card', null, [el('h3', { text: 'Совет директоров' }), this.boardMeter(),
+          el('p.muted.small-note', { text: 'Доверие растёт, если команда идёт выше цели, и падает при провалах, отрицательном балансе и превышении бюджета зарплат. В конце сезона совет подводит итоги.' })]);
+        side.appendChild(bc);
+      }
+      grid.appendChild(side);
+      wrap.appendChild(grid);
+      // контракты
+      const cc = el('div.card.wide-card', null, [el('div.round-h', null, [el('h3', { text: 'Контракты' }), own ? el('button.btn.small', { text: '✍ Продлить всех истекающих на их условиях', onclick: () => this.renewAll(club) }) : null])]);
+      const tbl = el('table.squad');
+      tbl.appendChild(el('thead', null, [el('tr', null, ['Поз', 'Игрок', 'Воз', 'Рейт', 'Форма', 'Стоимость', 'Зарплата', 'Контракт', ''].map(t => el('th', { text: t })))]));
+      const tb = el('tbody');
+      club.players.slice().sort((a, b) => a.contract - b.contract || b.wage - a.wage).forEach(p => {
+        const tr = el('tr', { onclick: () => UI.playerModal(p, club) }, [
+          el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]), el('td.pname', null, [p.name + (p.star ? ' ★ ' : ' '), UI.traitIcons(p)]), el('td', { text: p.age }),
+          el('td', null, [el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })]), el('td', null, [UI.formBadge(p)]),
+          el('td', { text: G.FIN.fmtM(G.FIN.value(p)) }), el('td', { text: G.FIN.fmtW(p.wage) }),
+          el('td' + (p.contract <= 1 ? '.ctr-warn' : ''), { text: p.contract <= 1 ? 'истекает летом' : `${p.contract} ${U.plural(p.contract, 'сезон', 'сезона', 'сезонов')}` }),
+          el('td', null, [own && p.contract <= 2 ? el('button.btn.small', { text: 'Продлить', onclick: (e) => { e.stopPropagation(); this.renewModal(p, club); } }) : null])
+        ]);
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      cc.appendChild(el('div.table-scroll', null, [tbl]));
+      if (own) cc.appendChild(el('div.muted.small-note', { text: 'Игроки с истёкшим контрактом летом уходят бесплатно. Пока трансферный рынок закрыт, их место займут выпускники академии.' }));
+      wrap.appendChild(cc);
+      body.appendChild(wrap);
+    },
+
+    renewModal(p, club) {
+      const st = this.st;
+      const d = G.FIN.demand(st, p);
+      if (d.tries <= 0) { UI.toast(`${p.name} не хочет обсуждать контракт до конца сезона`, 'warn'); return; }
+      const state = { wage: d.wage, years: Math.round((d.years[0] + d.years[1]) / 2) };
+      const content = el('div.renew');
+      const info = el('div.renew-info');
+      const redraw = () => {
+        const newBill = G.FIN.wageBill(club) - p.wage + state.wage;
+        const yearsOk = state.years >= d.years[0] && state.years <= d.years[1];
+        info.innerHTML = '';
+        info.append(
+          el('div', null, [el('small', { text: 'Сейчас' }), el('b', { text: `${G.FIN.fmtW(p.wage)}, ещё ${p.contract} сез.` })]),
+          el('div', null, [el('small', { text: 'Требование игрока' }), el('b', { text: `${G.FIN.fmtW(d.wage)}, ${d.years[0]}–${d.years[1]} ${U.plural(d.years[1], 'год', 'года', 'лет')}` })]),
+          el('div' + (newBill > club.fin.wageBudget ? '.neg' : ''), null, [el('small', { text: 'Ведомость после подписания' }), el('b', { text: `${newBill} / ${club.fin.wageBudget} тыс./нед` })]),
+          el('div', null, [el('small', { text: 'Попыток осталось' }), el('b', { text: d.tries })])
+        );
+        wageVal.textContent = G.FIN.fmtW(state.wage) + (state.wage < d.wage ? ' — ниже требования' : '');
+        hint.textContent = !yearsOk ? `Срок ${state.years} ${U.plural(state.years, 'год', 'года', 'лет')} игроку не по душе — без надбавки ~8% не согласится.` : '';
+      };
+      const wageVal = el('b');
+      const slider = el('input', { type: 'range', min: Math.round(d.wage * 0.75), max: Math.round(d.wage * 1.4), value: d.wage, step: 1, oninput: (e) => { state.wage = +e.target.value; redraw(); } });
+      const yrs = el('div.seg');
+      [1, 2, 3, 4, 5].forEach(y => yrs.appendChild(el('button' + (y === state.years ? '.on' : ''), { text: y + ' ' + U.plural(y, 'год', 'года', 'лет'), onclick: (e) => { state.years = y; U.$$('button', yrs).forEach(b => b.classList.remove('on')); e.target.classList.add('on'); redraw(); } })));
+      const hint = el('div.renew-hint');
+      content.append(el('div.pc-head', null, [el('div', null, [el('div.pc-name', { text: p.name }), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · стоимость ${G.FIN.fmtM(G.FIN.value(p))}` })])]),
+        info, el('div.renew-row', null, [el('span', { text: 'Зарплата' }), slider, wageVal]), el('div.renew-row', null, [el('span', { text: 'Срок' }), yrs]), hint);
+      redraw();
+      UI.modal({ title: 'Переговоры о контракте', content, buttons: [{ text: 'Отмена', cls: 'ghost', value: false }, { text: 'Предложить', cls: 'primary', value: true }] }).result.then(v => {
+        if (!v) return;
+        const r = G.FIN.renew(st, club, p, state.wage, state.years);
+        UI.toast(r.msg, r.ok ? '' : 'warn');
+        if (r.ok) st.news.push({ r: st.round, text: '✍ ' + r.msg });
+        LEAGUE.save(st);
+        this.hub(this.tab);
+      });
+    },
+
+    renewAll(club) {
+      const st = this.st;
+      const list = club.players.filter(p => p.contract <= 1);
+      if (!list.length) { UI.toast('Нет истекающих контрактов'); return; }
+      const ok = [], fail = [];
+      list.sort((a, b) => TAC.overall(b) - TAC.overall(a)).forEach(p => {
+        const d = G.FIN.demand(st, p);
+        if (d.tries <= 0) { fail.push(p.name + ' (отказ от переговоров)'); return; }
+        const r = G.FIN.renew(st, club, p, d.wage, Math.round((d.years[0] + d.years[1]) / 2));
+        (r.ok ? ok : fail).push(r.ok ? p.name : p.name + (r.msg.includes('бюджет') ? ' (нет бюджета)' : ''));
+      });
+      const content = el('div', null, [ok.length ? el('p', { text: '✅ Продлены: ' + ok.join(', ') }) : null, fail.length ? el('p', { text: '❌ Не продлены: ' + fail.join(', ') }) : null]);
+      if (ok.length) st.news.push({ r: st.round, text: `✍ Продлены контракты: ${ok.join(', ')}.` });
+      LEAGUE.save(st);
+      UI.modal({ title: 'Продление контрактов', content, buttons: [{ text: 'OK', cls: 'primary' }] }).result.then(() => this.hub('finance'));
+    },
+
     tabStats(body) {
       const st = this.st;
       const grid = el('div.stats-grid');
@@ -626,10 +795,10 @@
 
     squadTable(club) {
       const card = el('div.card.wide-card', null, [el('h3', { text: `Состав «${club.name}»` })]);
-      const cols = [['pos', 'Поз'], ['name', 'Игрок'], ['age', 'Воз']].concat(G.DATA.ATTRS.map(a => [a.k, a.n.slice(0, 3)])).concat([['ref', 'Реф'], ['ovr', 'Рейт'], ['form', 'Форма'], ['fit', 'Свеж'], ['apps', 'И'], ['goals', 'Г'], ['rat', 'Оц']]);
+      const cols = [['pos', 'Поз'], ['name', 'Игрок'], ['age', 'Воз']].concat(G.DATA.ATTRS.map(a => [a.k, a.n.slice(0, 3)])).concat([['ref', 'Реф'], ['ovr', 'Рейт'], ['form', 'Форма'], ['fit', 'Свеж'], ['apps', 'И'], ['goals', 'Г'], ['rat', 'Оц'], ['val', 'Стоим.'], ['wage', 'З/п'], ['ctr', 'Контр.']]);
       let sortK = 'pos', dir = 1;
       const order = { GK: 0, DF: 1, MF: 2, FW: 3 };
-      const get = (p, k) => k === 'pos' ? order[p.pos] * 100 - TAC.overall(p) : k === 'name' ? p.name : k === 'age' ? p.age : k === 'ovr' ? TAC.overall(p) : k === 'fit' ? p.fit : k === 'form' ? TAC.formBonus(p) : k === 'apps' ? p.st.apps : k === 'goals' ? p.st.goals : k === 'rat' ? (p.st.apps ? p.st.rsum / p.st.apps : 0) : p.a[k];
+      const get = (p, k) => k === 'pos' ? order[p.pos] * 100 - TAC.overall(p) : k === 'name' ? p.name : k === 'age' ? p.age : k === 'ovr' ? TAC.overall(p) : k === 'fit' ? p.fit : k === 'form' ? TAC.formBonus(p) : k === 'apps' ? p.st.apps : k === 'goals' ? p.st.goals : k === 'rat' ? (p.st.apps ? p.st.rsum / p.st.apps : 0) : k === 'val' ? G.FIN.value(p) : k === 'wage' ? p.wage : k === 'ctr' ? p.contract : p.a[k];
       const tblWrap = el('div.table-scroll');
       const render = () => {
         const tbl = el('table.squad');
@@ -649,6 +818,9 @@
           tr.appendChild(el('td', { text: p.st.apps }));
           tr.appendChild(el('td', { text: p.st.goals }));
           tr.appendChild(el('td', { text: p.st.apps ? (p.st.rsum / p.st.apps).toFixed(1) : '–' }));
+          tr.appendChild(el('td', { text: '£' + G.FIN.value(p).toFixed(1) + 'м' }));
+          tr.appendChild(el('td', { text: '£' + p.wage + 'к' }));
+          tr.appendChild(el('td' + (p.contract <= 1 ? '.ctr-warn' : ''), { text: p.contract }));
           tb.appendChild(tr);
         });
         tbl.appendChild(tb);
@@ -688,6 +860,8 @@
         el('p', { text: 'У игроков 8 характеристик (1–20): Удар, Пас, Дриблинг, Скорость, Отбор, Позиция, Выносливость, Хладнокровие (+ Рефлексы у вратарей). В обороне у своих ворот работают защитники, в центре — полузащитники, у чужих ворот — нападающие: схема определяет, кто и где участвует. Усталость снижает все характеристики — делайте замены. План на игру, менталитет, прессинг и линия обороны меняют силу каждого цвета.' }),
         el('h4', { text: 'Форма и развитие' }),
         el('p', { text: 'Форма — взвешенная средняя оценок за 5 последних матчей (последний важнее всего). Отличная форма даёт до +2 ко всем характеристикам в матче, ужасная — до −2. Стрелки ⇈ ↑ → ↓ ⇊ видны в составе и на схеме; тренеры-ИИ и автосостав учитывают форму. В межсезонье характеристики меняются в зависимости от возраста, средней оценки (выше 7.0 — сильнее растут или медленнее стареют, ниже 6.3 — наоборот) и игровой практики.' }),
+        el('h4', { text: 'Финансы и контракты' }),
+        el('p', { text: 'Клуб получает телеправа и спонсорские деньги каждый тур, выручку от билетов — за домашние матчи, призовые — в конце сезона (зависят от места, 1–6 места дают еврокубковые премии). Расходы — зарплаты и операционные траты. Стоимость игрока зависит от рейтинга, возраста, формы, оценок, особенностей и срока контракта. Продлевайте контракты в разделе «Финансы»: игрок называет требования, а совет директоров не даст выйти за бюджет зарплат. Непродлённые игроки летом уходят бесплатно. Совет следит за местом относительно цели и за финансами.' }),
         el('h4', { text: 'Особенности игроков' }),
         el('p', null, [`У игроков есть особенности (всего ${Object.keys(G.TRAITS.LIST).length}): «Спорит с судьями», «Бьёт при первой возможности», «Передерживает мяч», «Решает в концовке», «Хрупкий» и другие. Они срабатывают, пока игрок на поле, и меняют силу блоков, удары, фолы, карточки, усталость и травмы. Значки видны в составе и на схеме — наведите на значок, чтобы прочитать эффект. `, el('button.btn.ghost.small', { text: 'Все особенности', onclick: () => UI.traitsGuide() })]),
         el('p', { text: 'Тренеры-ИИ выбирают схему и план исходя из своих предпочтений, состава и силы соперника, а по ходу матча реагируют на счёт, усталость и удаления. В перерыве, на 60-й и 75-й минутах тренер разбирает игру: если команду душат прессингом, техничный состав переходит на «Владение», а слабый технически — на «Прямой футбол»; против низкого блока идёт через фланги или бьёт издали, против высокой линии — на рывки за спину; опускает линию против быстрых нападающих, снижает прессинг при усталости и карточках, добавляет полузащитника, если проигрывает центр.'})

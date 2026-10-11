@@ -110,6 +110,34 @@
     GK: [{ n: 'Вратарь-реакция', m: { ref: 2, pas: -1 } }, { n: 'Вратарь-свипер', m: { pas: 3, pac: 3, com: 1, ref: -1 } }, { n: 'Классический вратарь', m: { pos: 2, com: 1 } }]
   };
 
+  /* Один игрок: уровень q, возраст, архетип, характеристики, особенности */
+  function makePlayer(club, pos, q, age, rng, usedNames, id, num, star) {
+    let name;
+    do {
+      name = U.pick(FIRST, rng) + ' ' + U.pick(LAST, rng);
+    } while (usedNames.has(name));
+    usedNames.add(name);
+    if (age < 21) q -= 0.8;
+    if (age > 32) q -= 0.5;
+    const arch = U.pick(ARCHETYPES[pos], rng);
+    const a = {};
+    const tpl = TEMPLATES[pos];
+    for (const k in tpl) {
+      let v = q + tpl[k] + (arch.m[k] || 0) + (rng() * 4.4 - 2.2);
+      if (k === 'sta' && age > 30) v -= (age - 30) * 0.5;
+      if (k === 'pac' && age > 29) v -= (age - 29) * 0.4;
+      if (k === 'com' && age > 27) v += 1;
+      a[k] = U.clamp(Math.round(v), 1, 20);
+    }
+    const pl = {
+      id, club: club.id, name, pos, age, num, role: arch.n, star: !!star,
+      a, fit: 100, form: 6.45, lastR: [], inj: 0, susp: 0, yc: 0,
+      st: { apps: 0, goals: 0, assists: 0, yc: 0, rc: 0, rsum: 0 }
+    };
+    pl.tr = G.TRAITS ? G.TRAITS.roll(pl, rng) : [];
+    return pl;
+  }
+
   function generateSquad(club, rng, usedNames, idStart) {
     const plan = [['GK', 3], ['DF', 8], ['MF', 8], ['FW', 5]];
     const starters = { GK: 1, DF: 4, MF: 4, FW: 2 };
@@ -124,37 +152,14 @@
     let id = idStart;
     for (const [pos, count] of plan) {
       for (let i = 0; i < count; i++) {
-        let name;
-        do {
-          const fn = U.pick(FIRST, rng), ln = U.pick(LAST, rng);
-          name = fn + ' ' + ln;
-        } while (usedNames.has(name));
-        usedNames.add(name);
         const tier = i < starters[pos] ? 0.9 : (i < starters[pos] + 2 ? -0.2 : -1.6);
         let q = club.str + tier + (rng() * 2.4 - 1.2);
         let star = false;
         const si = starIdx.indexOf(pos);
         if (si >= 0 && i === 0) { q += isTop ? 2.2 : 1.6; star = true; starIdx.splice(si, 1); }
         const age = Math.floor(18 + rng() * 17);
-        if (age < 21) q -= 0.8;
-        if (age > 32) q -= 0.5;
-        const arch = U.pick(ARCHETYPES[pos], rng);
-        const a = {};
-        const tpl = TEMPLATES[pos];
-        for (const k in tpl) {
-          let v = q + tpl[k] + (arch.m[k] || 0) + (rng() * 4.4 - 2.2);
-          if (k === 'sta' && age > 30) v -= (age - 30) * 0.5;
-          if (k === 'pac' && age > 29) v -= (age - 29) * 0.4;
-          if (k === 'com' && age > 27) v += 1;
-          a[k] = U.clamp(Math.round(v), 1, 20);
-        }
-        let num = pos === 'GK' && i === 0 ? 1 : nums[numIdx++];
-        const pl = {
-          id: club.id + '_' + (id++), club: club.id, name, pos, age, num, role: arch.n, star,
-          a, fit: 100, form: 6.45, lastR: [], inj: 0, susp: 0, yc: 0,
-          st: { apps: 0, goals: 0, assists: 0, yc: 0, rc: 0, rsum: 0 }
-        };
-        pl.tr = G.TRAITS ? G.TRAITS.roll(pl, rng) : [];
+        const num = pos === 'GK' && i === 0 ? 1 : nums[numIdx++];
+        const pl = makePlayer(club, pos, q, age, rng, usedNames, club.id + '_' + (id++), num, star);
         players.push(pl);
       }
     }
@@ -173,5 +178,5 @@
     return clubs;
   }
 
-  G.DATA = { ATTRS, GK_ATTR, CLUBS, COACHES, createWorld };
+  G.DATA = { ATTRS, GK_ATTR, CLUBS, COACHES, createWorld, makePlayer, TEMPLATES };
 })(typeof window !== 'undefined' ? window : globalThis);

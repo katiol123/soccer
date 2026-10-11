@@ -150,9 +150,18 @@
     content.appendChild(el('div.pc-stats', null, [
       stat('Матчи', s.apps), stat('Голы', s.goals), stat('Ассисты', s.assists), stat('Ср. оценка', s.apps ? (s.rsum / s.apps).toFixed(2) : '—'), stat('ЖК', s.yc), stat('Свежесть', Math.round(p.fit) + '%')
     ]));
+    if (G.FIN && p.wage != null) {
+      const fr = el('div.pc-fin', null, [
+        el('div', null, [el('small', { text: 'Стоимость' }), el('b', { text: G.FIN.fmtM(G.FIN.value(p)) })]),
+        el('div', null, [el('small', { text: 'Зарплата' }), el('b', { text: G.FIN.fmtW(p.wage) })]),
+        el('div' + (p.contract <= 1 ? '.warn' : ''), null, [el('small', { text: 'Контракт' }), el('b', { text: p.contract <= 0 ? 'истёк' : `ещё ${p.contract} ${U.plural(p.contract, 'сезон', 'сезона', 'сезонов')}` })])
+      ]);
+      if (UI.renewHook && UI.renewHook.can(p, club)) fr.appendChild(el('button.btn.small.primary', { text: '✍ Продлить контракт', onclick: () => { md.close(); UI.renewHook.open(p, club); } }));
+      content.appendChild(fr);
+    }
     if (p.inj > 0) content.appendChild(el('div.pc-warn', { text: `Травма: ещё ${p.inj} ${U.plural(p.inj, 'тур', 'тура', 'туров')}` }));
     if (p.susp > 0) content.appendChild(el('div.pc-warn', { text: `Дисквалификация: ${p.susp} ${U.plural(p.susp, 'матч', 'матча', 'матчей')}` }));
-    UI.modal({ title: club.name, content, buttons: [{ text: 'Закрыть', cls: 'ghost' }] });
+    const md = UI.modal({ title: club.name, content, buttons: [{ text: 'Закрыть', cls: 'ghost' }] });
     function stat(n, v) { return el('div.pc-stat', null, [el('b', { text: v }), el('small', { text: n })]); }
   };
 
