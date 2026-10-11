@@ -37,16 +37,39 @@
     return rounds.concat(second).map(rd => rd.map(f => Object.assign(f, { res: null })));
   }
 
+  /* ---------- лиги ---------- */
+  /* Клубы лиги */
+  function leagueClubs(st, lid) { lid = lid || st.lg; return st.clubs.filter(c => (c.league || st.lg) === lid); }
+  /* st.fixtures — прозрачный указатель на календарь текущей лиги (не сохраняется отдельно) */
+  function attach(st) {
+    if (Object.getOwnPropertyDescriptor(st, 'fixtures') && !Object.getOwnPropertyDescriptor(st, 'fixtures').get) {
+      // старый формат: перенос календаря в лигу
+      const fx = st.fixtures; delete st.fixtures;
+      st.leagues = st.leagues || {}; st.lg = st.lg || 'eng1';
+      st.leagues[st.lg] = Object.assign({ id: st.lg }, st.leagues[st.lg] || {}, { fixtures: fx });
+    }
+    Object.defineProperty(st, 'fixtures', {
+      configurable: true, enumerable: false,
+      get() { return this.leagues[this.lg].fixtures; },
+      set(v) { this.leagues[this.lg].fixtures = v; }
+    });
+    return st;
+  }
+  function leagueInfo(st, lid) { const L = DATA.LEAGUES[lid || st.lg]; return L || { id: lid, name: 'Лига', short: '', flag: '' }; }
+
   function newGame(opts) {
-    const clubs = DATA.createWorld(opts.seed || Math.floor(Math.random() * 1e9));
-    const ids = U.shuffle(clubs.map(c => c.id));
+    const lid = opts.league || 'eng1';
+    const clubs = opts.world || DATA.createWorld(opts.seed || Math.floor(Math.random() * 1e9), [lid]);
+    const ids = U.shuffle(clubs.filter(c => c.league === lid).map(c => c.id));
     const st = {
-      v: 1, mode: opts.mode, userClub: opts.clubId || null,
+      v: 2, mode: opts.mode, userClub: opts.clubId || null,
       season: 1, seasonName: '2025/26', round: 0,
-      clubs, fixtures: schedule(ids),
+      lg: lid, leagues: { [lid]: { id: lid, fixtures: schedule(ids) } },
+      clubs,
       settings: { turns: opts.turns || 24, speed: 1, sound: true },
       userTactics: null, news: []
     };
+    attach(st);
     if (st.userClub) {
       const c = club(st, st.userClub);
       st.userTactics = TAC.defaultTactics(c);
@@ -59,10 +82,11 @@
 
   function club(st, id) { return st.clubs.find(c => c.id === id); }
 
-  function standings(st) {
+  function standings(st, lid) {
+    lid = lid || st.lg;
     const rows = {};
-    st.clubs.forEach(c => { rows[c.id] = { id: c.id, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, form: [] }; });
-    st.fixtures.forEach(rd => rd.forEach(f => {
+    leagueClubs(st, lid).forEach(c => { rows[c.id] = { id: c.id, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, form: [] }; });
+    st.leagues[lid].fixtures.forEach(rd => rd.forEach(f => {
       if (!f.res) return;
       const h = rows[f.h], a = rows[f.a], hs = f.res.hs, as = f.res.as;
       h.p++; a.p++; h.gf += hs; h.ga += as; a.gf += as; a.ga += hs;
@@ -165,7 +189,7 @@
     const y = 2024 + st.season;
     st.seasonName = y + '/' + String(y + 1).slice(2);
     st.round = 0;
-    st.fixtures = schedule(U.shuffle(st.clubs.map(c => c.id)));
+    for (const lid in st.leagues) st.leagues[lid].fixtures = schedule(U.shuffle(leagueClubs(st, lid).map(c => c.id)));
     const devs = [];
     st.clubs.forEach(c => c.players.forEach(p => {
       p.age++;
@@ -231,28 +255,32 @@
     return all.sort((a, b) => b.p.st.goals - a.p.st.goals || b.p.st.assists - a.p.st.assists).slice(0, n || 15);
   }
 
+  /* ---------- сохранение ---------- */
+  const serialize = st => JSON.stringify(st, (k, v) => (k === 'm' || k[0] === '_') ? undefined : v);
   function save(st) {
-    try {
-      const s = JSON.stringify(st, (k, v) => (k === 'm' || k[0] === '_') ? undefined : v);
-      localStorage.setItem(SAVE_KEY, s);
-      return true;
-    } catch (e) { return false; }
+    try { if (G.STORE) G.STORE.save(serialize(st)); else localStorage.setItem('match3-manager-save-v1', serialize(st)); return true; } catch (e) { return false; }
   }
-  function load() {
-    try {
-      const s = localStorage.getItem(SAVE_KEY);
-      if (!s) return null;
-      const st = JSON.parse(s);
-      if (!st || st.v !== 1) return null;
-      if (G.TRAITS) G.TRAITS.ensure(st.clubs);
-      st.clubs.forEach(c => c.players.forEach(p => { if (!p.lastR) { p.lastR = []; p.form = TAC.computeForm(p); } }));
-      G.FIN.init(st);
-      G.CAR.ensure(st);
-      return st;
-    } catch (e) { return null; }
+  /* Разбор и миграция сохранения (v1 → v2: лиги) */
+  function revive(json) {
+    if (!json) return null;
+    const st = JSON.parse(json);
+    if (!st || (st.v !== 1 && st.v !== 2)) return null;
+    if (st.v === 1) { st.lg = 'eng1'; st.clubs.forEach(c => { c.league = 'eng1'; }); st.v = 2; }
+    st.clubs.forEach(c => { if (!c.league) c.league = st.lg; if (c.cap == null) c.cap = DATA.CAPACITY[c.id] || 30; });
+    attach(st);
+    if (G.TRAITS) G.TRAITS.ensure(st.clubs);
+    st.clubs.forEach(c => c.players.forEach(p => { if (!p.lastR) { p.lastR = []; p.form = TAC.computeForm(p); } }));
+    G.FIN.init(st);
+    G.CAR.ensure(st);
+    return st;
   }
-  function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
-  function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* */ } }
+  async function load() {
+    try { return revive(G.STORE ? await G.STORE.load() : localStorage.getItem('match3-manager-save-v1')); } catch (e) { console.warn('load failed', e); return null; }
+  }
+  async function hasSave() { try { return G.STORE ? await G.STORE.has() : !!localStorage.getItem('match3-manager-save-v1'); } catch (e) { return false; } }
+  async function clearSave() { if (G.STORE) await G.STORE.clear(); }
+  async function exportSave(st) { await G.STORE.exportFile(serialize(st), `kombinaciya-${st.seasonName.replace('/', '-')}-tur${st.round + 1}`); }
+  async function importSave(file) { const st = revive(await G.STORE.importFile(file)); if (!st) throw new Error('Файл не похож на сохранение игры'); save(st); return st; }
 
-  G.LEAGUE = { newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
+  G.LEAGUE = { leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
 })(typeof window !== 'undefined' ? window : globalThis);

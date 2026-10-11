@@ -40,6 +40,30 @@
       window.scrollTo(0, 0);
     },
 
+    storeInfo() {
+      const m = G.STORE ? G.STORE.meta : null;
+      if (!m || !m.raw) return 'Сохранение: ' + (m ? m.backend : 'localStorage');
+      return `Сохранение: ${m.backend}${G.STORE.hasGzip ? ', сжатие gzip' : ''} · ${(m.stored / 1024).toFixed(0)} КБ (без сжатия ${(m.raw / 1024).toFixed(0)} КБ)`;
+    },
+
+    importSave() {
+      const inp = el('input', { type: 'file', accept: '.gz,.json,application/gzip,application/json', style: { display: 'none' } });
+      inp.addEventListener('change', async () => {
+        const f = inp.files && inp.files[0];
+        inp.remove();
+        if (!f) return;
+        try {
+          if (!(await this.confirmOverwrite())) return;
+          this.st = await LEAGUE.importSave(f);
+          this.tab = 'home';
+          this.hub();
+          UI.toast('Сохранение загружено из файла');
+        } catch (e) { UI.toast('Не удалось загрузить: ' + e.message, 'warn'); }
+      });
+      document.body.appendChild(inp);
+      inp.click();
+    },
+
     soundPref(on) { try { localStorage.setItem('m3-sound', on ? 'on' : 'off'); } catch (e) { /* */ } },
 
     /* ---------- Главное меню ---------- */
@@ -57,8 +81,7 @@
         floaters.appendChild(f);
       }
       root.appendChild(floaters);
-      const has = LEAGUE.hasSave();
-      const saved = has ? LEAGUE.load() : null;
+      const contSlot = el('div.cont-slot');
       const card = el('div.menu-card', null, [
         el('div.logo', null, [
           el('div.logo-gems', null, [0, 1, 2].map(t => { const g = el('span.lg-ico.t' + [0, 3, 5][t]); g.innerHTML = GFX.GEM_ICONS[[0, 3, 5][t]]; return g; })),
@@ -66,19 +89,27 @@
           el('div.logo-sub', { text: 'Футбольный менеджер · Три в ряд · Премьер-лига' })
         ]),
         el('div.menu-btns', null, [
-          saved ? el('button.btn.primary.big', { onclick: () => { this.st = saved; this.tab = 'home'; this.hub(); } }, [el('span', { text: '▶ Продолжить' }), el('small', { text: (saved.userClub ? LEAGUE.club(saved, saved.userClub).name : 'Режим зрителя') + ` · сезон ${saved.seasonName} · тур ${Math.min(saved.round + 1, 38)}` })]) : null,
-          el('button.btn.big' + (saved ? '' : '.primary'), { onclick: () => this.teamSelect() }, [el('span', { text: '⚽ Новая карьера' }), el('small', { text: 'Выберите клуб и приведите его к титулу' })]),
+          contSlot,
+          el('button.btn.big.new-career', { onclick: () => this.teamSelect() }, [el('span', { text: '⚽ Новая карьера' }), el('small', { text: 'Выберите клуб и приведите его к титулу' })]),
           el('button.btn.big', { onclick: () => this.spectatorSetup() }, [el('span', { text: '👁 Режим зрителя' }), el('small', { text: 'Наблюдайте за битвой тренеров-ИИ' })]),
-          el('button.btn.ghost', { text: '📖 Как играть', onclick: () => this.howTo() })
+          el('div.menu-row', null, [
+            el('button.btn.ghost', { text: '📖 Как играть', onclick: () => this.howTo() }),
+            el('button.btn.ghost', { text: '📂 Загрузить из файла', onclick: () => this.importSave() })
+          ])
         ])
       ]);
+      // сохранение загружается асинхронно (IndexedDB)
+      LEAGUE.load().then(saved => {
+        if (!saved) { U.$('.new-career', card).classList.add('primary'); return; }
+        contSlot.appendChild(el('button.btn.primary.big', { onclick: () => { this.st = saved; this.tab = 'home'; this.hub(); } }, [el('span', { text: '▶ Продолжить' }), el('small', { text: (saved.userClub ? LEAGUE.club(saved, saved.userClub).name : 'Режим зрителя') + ` · ${LEAGUE.leagueInfo(saved).name} · сезон ${saved.seasonName} · тур ${Math.min(saved.round + 1, saved.fixtures.length)}` })]));
+      });
       root.appendChild(card);
       root.appendChild(el('div.menu-foot', { text: 'Клубы АПЛ 2025/26 · игроки и тренеры вымышлены' }));
       this.show(root);
     },
 
-    confirmOverwrite() {
-      if (!LEAGUE.hasSave()) return Promise.resolve(true);
+    async confirmOverwrite() {
+      if (!(await LEAGUE.hasSave())) return true;
       return UI.modal({ title: 'Новая игра', content: el('p', { text: 'Текущее сохранение будет перезаписано. Продолжить?' }), buttons: [{ text: 'Отмена', cls: 'ghost', value: false }, { text: 'Да, начать', cls: 'primary', value: true }] }).result;
     },
 
@@ -112,7 +143,7 @@
           el('div.cd-fin', null, [
             el('div', null, [el('small', { text: 'Бюджет зарплат' }), el('b', { text: c.fin ? G.FIN.fmtW(c.fin.wageBudget) : '—' })]),
             el('div', null, [el('small', { text: 'Стоимость состава' }), el('b', { text: G.FIN.fmtM(G.FIN.squadValue(c)) })]),
-            el('div', null, [el('small', { text: 'Стадион' }), el('b', { text: Math.round((G.FIN.CAPACITY[c.id] || 30) * 1000).toLocaleString('ru') + ' мест' })])
+            el('div', null, [el('small', { text: 'Стадион' }), el('b', { text: Math.round((c.cap || G.FIN.CAPACITY[c.id] || 30) * 1000).toLocaleString('ru') + ' мест' })])
           ]),
           el('div.cd-coach', null, [el('small', { text: 'Нынешний тренер (уступит вам место)' }), el('b', { text: `${c.coach.name} (${c.coach.nat})` }), el('p', { text: c.coach.motto }),
             el('div.cd-tags', null, [el('span', { text: c.coach.formations.join(' / ') }), el('span', { text: TAC.PLANS[c.coach.plan].icon + ' ' + TAC.PLANS[c.coach.plan].n })])]),
@@ -141,14 +172,8 @@
     },
 
     startGame(mode, clubId, world, turns) {
-      const st = LEAGUE.newGame({ mode, clubId, turns });
-      if (world) {
-        // используем тот же мир, что был показан при выборе
-        st.clubs = world;
-        if (clubId) st.userTactics = TAC.defaultTactics(LEAGUE.club(st, clubId));
-        st.board = null;
-        G.FIN.init(st);
-      }
+      // используем тот же мир, что был показан при выборе клуба
+      const st = LEAGUE.newGame({ mode, clubId, turns, world });
       this.st = st;
       LEAGUE.save(st);
       this.tab = 'home';
@@ -188,6 +213,11 @@
         el('button.btn', { text: SFX.on ? '🔊 Звук: вкл' : '🔇 Звук: выкл', onclick: (e) => { SFX.on = !SFX.on; this.soundPref(SFX.on); e.target.textContent = SFX.on ? '🔊 Звук: вкл' : '🔇 Звук: выкл'; } }),
         el('div.len-wrap', null, [this.lengthPicker(this.st.settings)]),
         el('button.btn', { text: '💾 Сохранить', onclick: () => { LEAGUE.save(this.st); UI.toast('Игра сохранена'); } }),
+        el('div.gm-row', null, [
+          el('button.btn.ghost', { text: '⬇ Экспорт в файл', onclick: () => LEAGUE.exportSave(this.st).then(() => UI.toast('Файл сохранения скачан')) }),
+          el('button.btn.ghost', { text: '📂 Загрузить из файла', onclick: () => { md.close(); this.importSave(); } })
+        ]),
+        el('div.muted.small-note.store-info', { text: this.storeInfo() }),
         el('button.btn.ghost', { text: '⏏ Выйти в главное меню', onclick: () => { LEAGUE.save(this.st); md.close(); this.menu(); } })
       ]);
       const md = UI.modal({ title: 'Меню', content, onClose: () => LEAGUE.save(this.st) });
@@ -1051,7 +1081,7 @@
         kpi('Баланс клуба', G.FIN.fmtM(f.balance), `${income + expense >= 0 ? '+' : ''}${(income + expense).toFixed(1)} млн за сезон`, f.balance < 0 ? 'neg' : ''),
         kpi('Зарплатная ведомость', `£${bill} тыс./нед`, `бюджет £${f.wageBudget} тыс. · ${G.FIN.yearly(bill).toFixed(0)} млн/год`, bill > f.wageBudget ? 'neg' : ''),
         kpi('Стоимость состава', G.FIN.fmtM(G.FIN.squadValue(club)), `${club.players.length} игроков`),
-        kpi('Стадион', Math.round((G.FIN.CAPACITY[club.id] || 30) * 1000).toLocaleString('ru') + ' мест', `билет ~£${Math.round(G.FIN.ticket(club))}`)
+        kpi('Стадион', Math.round((club.cap || G.FIN.CAPACITY[club.id] || 30) * 1000).toLocaleString('ru') + ' мест', `билет ~£${Math.round(G.FIN.ticket(club))}`)
       ]);
       wrap.appendChild(kpis);
       const grid = el('div.fin-grid');

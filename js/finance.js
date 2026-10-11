@@ -131,7 +131,7 @@
 
   /* Прогноз доходов на сезон (для бюджета зарплат) */
   function projectedIncome(club, expectedPos) {
-    const cap = CAPACITY[club.id] || 30;
+    const cap = club.cap || CAPACITY[club.id] || 30;
     return TV_EQUAL + TV_MERIT * (21 - expectedPos) + cap * ticket(club) * 0.95 * 19 / 1000 + commercial(club) + (EURO[expectedPos - 1] || 0);
   }
 
@@ -142,10 +142,14 @@
     club.fin.wageBudget = Math.round(Math.max(bill * 1.05, inc * 0.68 * 1000 / 52));
   }
 
+  /* Ожидаемое место — внутри своей лиги */
   function expectedPositions(st) {
-    const order = st.clubs.map(c => ({ c, r: TAC.teamRating(c) })).sort((a, b) => b.r - a.r);
     const res = {};
-    order.forEach((x, i) => { res[x.c.id] = i + 1; });
+    const lids = st.leagues ? Object.keys(st.leagues) : [null];
+    for (const lid of lids) {
+      const clubs = lid && G.LEAGUE ? G.LEAGUE.leagueClubs(st, lid) : st.clubs;
+      clubs.map(c => ({ c, r: TAC.teamRating(c) })).sort((a, b) => b.r - a.r).forEach((x, i) => { res[x.c.id] = i + 1; });
+    }
     return res;
   }
 
@@ -181,9 +185,9 @@
     if (!club || !club.fin) return;
     const pos = table ? table.findIndex(r => r.id === club.id) + 1 : 10;
     const att = U.clamp(0.82 + (20 - pos) * 0.008 + U.rnd() * 0.05, 0.75, 1);
-    const gate = (CAPACITY[club.id] || 30) * att * ticket(club) / 1000;
+    const gate = (club.cap || CAPACITY[club.id] || 30) * att * ticket(club) / 1000;
     book(club, 'gate', Math.round(gate * 100) / 100);
-    fixture.res.att = Math.round((CAPACITY[club.id] || 30) * att * 1000);
+    fixture.res.att = Math.round((club.cap || CAPACITY[club.id] || 30) * att * 1000);
   }
 
   /* Каждый тур: телеправа (равная доля), спонсоры, зарплаты, операционные расходы */
@@ -230,14 +234,15 @@
   /* Конец сезона: призовые, еврокубки, итоги, контракты */
   function seasonEnd(st, table) {
     const report = [];
-    table.forEach((r, i) => {
+    const tables = st.leagues ? Object.keys(st.leagues).map(lid => G.LEAGUE.standings(st, lid)) : [table];
+    tables.forEach(tbl => tbl.forEach((r, i) => {
       const c = st.clubs.find(x => x.id === r.id);
       if (!c || !c.fin) return;
       book(c, 'prize', TV_MERIT * (20 - i) + (EURO[i] || 0));
       const s = c.fin.season;
       c.fin.last = Object.assign({}, s, { season: st.seasonName, profit: Math.round((s.tv + s.gate + s.comm + s.prize + s.wages + s.ops + (s.transfers || 0)) * 10) / 10, pos: i + 1 });
       c.fin.season = emptyLedger();
-    });
+    }));
     // совет директоров подводит итоги
     if (st.userClub) {
       const pos = table.findIndex(r => r.id === st.userClub) + 1;

@@ -183,17 +183,32 @@
     return players;
   }
 
-  function createWorld(seed) {
+  /* Вместимость стадионов (тыс. мест) */
+  const CAPACITY = { ars: 60.7, avl: 42.8, bou: 11.3, bre: 17.3, bha: 31.8, bur: 21.9, che: 40.3, cry: 25.5, eve: 52.9, ful: 29.6, lee: 37.8, liv: 61.3, mci: 53.4, mun: 74.3, new: 52.3, nfo: 30.4, sun: 49.0, tot: 62.8, whu: 62.5, wol: 31.8 };
+
+  /* Реестр лиг: новые чемпионаты добавляются сюда (клубы, тренеры, параметры) */
+  const LEAGUES = {
+    eng1: { id: 'eng1', name: 'Премьер-лига', short: 'АПЛ', country: 'Англия', flag: '🏴', tier: 1, clubs: CLUBS, coaches: COACHES }
+  };
+
+  function createWorld(seed, leagueIds) {
     const rng = U.seeded(seed || 20252026);
     const used = new Set();
-    const clubs = CLUBS.map((c, i) => {
-      const club = Object.assign({}, c);
-      club.coach = Object.assign({ id: 'c_' + c.id }, COACHES[c.id]);
-      club.players = generateSquad(club, rng, used, 1);
-      return club;
-    });
+    const clubs = [];
+    for (const lid of (leagueIds || ['eng1'])) {
+      const L = LEAGUES[lid];
+      L.clubs.forEach(c => clubs.push(makeClub(c, L, rng, used)));
+    }
     return clubs;
   }
+  function makeClub(c, L, rng, used) {
+    const club = Object.assign({}, c);
+    club.league = L.id;
+    if (club.cap == null) club.cap = CAPACITY[c.id] || 30;
+    club.coach = Object.assign({ id: 'c_' + c.id }, L.coaches[c.id]);
+    club.players = generateSquad(club, rng, used, 1);
+    return club;
+  }
 
-  G.DATA = { ATTRS, GK_ATTR, CLUBS, COACHES, createWorld, makePlayer, TEMPLATES, rollHidden };
+  G.DATA = { ATTRS, GK_ATTR, CLUBS, COACHES, LEAGUES, CAPACITY, createWorld, makePlayer, TEMPLATES, rollHidden };
 })(typeof window !== 'undefined' ? window : globalThis);

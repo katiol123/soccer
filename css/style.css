@@ -679,6 +679,11 @@ td.pname { font-weight: 700; }
 .sack-box { display: flex; flex-direction: column; gap: 10px; }
 .sack-box .se-trophy { font-size: 56px; text-align: center; animation: none; filter: none; }
 
+.menu-row, .gm-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.gm-row .btn { flex: 1; }
+.cont-slot:empty { display: none; }
+.store-info { text-align: center; }
+
 /* тосты */
 #toast-root { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; z-index: 70; pointer-events: none; }
 .toast { padding: 10px 18px; border-radius: 12px; background: rgba(20, 10, 40, .92); border: 1px solid var(--line2); font-weight: 700; font-size: 14px; box-shadow: 0 10px 30px -10px rgba(0,0,0,.8); animation: toastIn .35s cubic-bezier(.2, 1.4, .4, 1); transition: opacity .4s, transform .4s; }
