@@ -156,8 +156,14 @@
         el('div', null, [el('small', { text: 'Зарплата' }), el('b', { text: G.FIN.fmtW(p.wage) })]),
         el('div' + (p.contract <= 1 ? '.warn' : ''), null, [el('small', { text: 'Контракт' }), el('b', { text: p.contract <= 0 ? 'истёк' : `ещё ${p.contract} ${U.plural(p.contract, 'сезон', 'сезона', 'сезонов')}` })])
       ]);
+      const ml = G.FIN.moodLabel(p.mood == null ? 60 : p.mood);
+      fr.appendChild(el('div', null, [el('small', { text: 'Настроение' }), el('b', { text: `${ml[1]} ${ml[0]}` })]));
       if (UI.renewHook && UI.renewHook.can(p, club)) fr.appendChild(el('button.btn.small.primary', { text: '✍ Продлить контракт', onclick: () => { md.close(); UI.renewHook.open(p, club); } }));
       content.appendChild(fr);
+      if (UI.renewHook && UI.renewHook.own && UI.renewHook.own(club)) {
+        const sn = G.FIN.staffNotes(p);
+        if (sn.length) content.appendChild(el('div.agent', null, [el('small', { text: 'Мнение тренерского штаба' })].concat(sn.map(t => el('div', { text: '🗒 ' + t })))));
+      }
     }
     if (p.inj > 0) content.appendChild(el('div.pc-warn', { text: `Травма: ещё ${p.inj} ${U.plural(p.inj, 'тур', 'тура', 'туров')}` }));
     if (p.susp > 0) content.appendChild(el('div.pc-warn', { text: `Дисквалификация: ${p.susp} ${U.plural(p.susp, 'матч', 'матча', 'матчей')}` }));

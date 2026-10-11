@@ -135,7 +135,23 @@
       st: { apps: 0, goals: 0, assists: 0, yc: 0, rc: 0, rsum: 0 }
     };
     pl.tr = G.TRAITS ? G.TRAITS.roll(pl, rng) : [];
+    rollHidden(pl, rng);
     return pl;
+  }
+
+  /* Скрытый характер (1..20): амбиции, преданность, профессионализм, темперамент.
+     Игроку цифры не показываются — только поведение и реплики агента. */
+  function rollHidden(p, rng) {
+    rng = rng || Math.random;
+    const has = id => p.tr && p.tr.includes(id);
+    const r = (base, spread) => U.clamp(Math.round(base + (rng() + rng() + rng() - 1.5) * spread), 1, 20);
+    let amb = 10 + (p.age <= 23 ? 2 : p.age >= 31 ? -2 : 0) + (p.star ? 3 : 0) + (has('selfish') ? 3 : 0) + (has('bigGame') ? 2 : 0);
+    let loy = 10 + (p.age >= 29 ? 2 : 0) + (has('leader') ? 3 : 0) - (has('selfish') ? 2 : 0) - (has('homeBird') ? -2 : 0);
+    let pro = 10 + (p.age >= 27 ? 1 : 0) + (has('leader') ? 3 : 0) + (has('engine') || has('steady') ? 2 : 0) - (has('lazy') ? 4 : 0) - (has('inconsistent') ? 2 : 0);
+    let tem = 10 + (has('argue') ? 4 : 0) + (has('hothead') ? 5 : 0) - (has('calm') ? 4 : 0) + (p.a.com <= 9 ? 2 : p.a.com >= 15 ? -2 : 0);
+    p.h = { amb: r(amb, 5), loy: r(loy, 5), pro: r(pro, 5), tem: r(tem, 5) };
+    if (p.mood == null) p.mood = 65;
+    return p.h;
   }
 
   function generateSquad(club, rng, usedNames, idStart) {
@@ -178,5 +194,5 @@
     return clubs;
   }
 
-  G.DATA = { ATTRS, GK_ATTR, CLUBS, COACHES, createWorld, makePlayer, TEMPLATES };
+  G.DATA = { ATTRS, GK_ATTR, CLUBS, COACHES, createWorld, makePlayer, TEMPLATES, rollHidden };
 })(typeof window !== 'undefined' ? window : globalThis);

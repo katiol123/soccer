@@ -91,9 +91,10 @@
         if (p.m.played) {
           p.st.apps++; p.st.goals += p.m.goals; p.st.assists += p.m.assists;
           p.st.yc += p.m.yc; p.st.rsum += p.m.rating || 6.5;
-          if (p.m.rc) { p.st.rc++; p.susp = Math.max(p.susp, U.randInt(1, 3)); }
+          p.lp = st.round;
+          if (p.m.rc) { p.st.rc++; p.susp = Math.max(p.susp, U.randInt(1, 3)); G.FIN.fines(st, ts.club, p); }
           if (p.m.yc && !p.m.rc) { p.yc += p.m.yc; if (p.yc >= 5) { p.susp = Math.max(p.susp, 1); p.yc = 0; } }
-          if (p.m.inj) p.inj = U.randInt(1, 4);
+          if (p.m.inj) p.inj = Math.max(1, U.randInt(1, 4) + (p.h && p.h.pro >= 15 ? -1 : p.h && p.h.pro <= 6 ? 1 : 0));
           p.fit = Math.round(p.m.fit);
           p.lastR = (p.lastR || []).concat([p.m.rating || 6.5]).slice(-5);
           p.form = TAC.computeForm(p);
@@ -113,7 +114,7 @@
     const playedClubs = new Set();
     rd.forEach(f => { playedClubs.add(f.h); playedClubs.add(f.a); });
     st.clubs.forEach(c => c.players.forEach(p => {
-      p.fit = Math.min(100, p.fit + 24 + p.a.sta * 0.9);
+      p.fit = Math.min(100, p.fit + 24 + p.a.sta * 0.9 + ((p.h ? p.h.pro : 10) - 10) * 0.5);
       if (p.inj > 0) p.inj--;
       if (p.susp > 0 && playedClubs.has(c.id)) p.susp--;
     }));
@@ -185,7 +186,8 @@
     const apps = p.st.apps, avg = apps ? p.st.rsum / apps : null;
     const grade = apps < 5 ? 'few' : avg > 7.0 ? 'good' : avg < 6.3 ? 'bad' : 'ok';
     const play = U.clamp(apps / 19, 0.25, 1);
-    const perfK = { good: 1.5, ok: 1, bad: 0.55, few: 0.8 }[grade];
+    const pro = p.h ? p.h.pro : 10;
+    const perfK = { good: 1.5, ok: 1, bad: 0.55, few: 0.8 }[grade] * (0.8 + pro * 0.02);
     let total = 0;
     for (const k in p.a) {
       if (k === 'ref' && p.pos !== 'GK') continue;
@@ -197,7 +199,7 @@
         if (grade === 'good' && U.chance(0.2 * play)) delta = 1;
         if (grade === 'bad' && U.chance(0.12)) delta = -1;
       } else {
-        const declK = { good: 0.5, ok: 1, bad: 1.4, few: 1.15 }[grade];
+        const declK = { good: 0.5, ok: 1, bad: 1.4, few: 1.15 }[grade] * (1.3 - pro * 0.03);
         if (U.chance(0.45 * declK)) delta = -1;
       }
       if (U.chance(0.12)) delta += U.randInt(-1, 1);

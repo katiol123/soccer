@@ -43,16 +43,69 @@
     const w = 30 + 9 * Math.pow(baseValue(p), 0.7) * (p.age >= 31 ? 0.85 : 1) * (p.star ? 1.25 : 1);
     return Math.round(w);
   }
-  /* Требование игрока при продлении (фиксируется на сезон) */
-  function demand(st, p) {
+  /* Уровень клуба для игрока: ожидаемое место и сила игрока относительно состава */
+  function clubCore(club) {
+    const o = club.players.map(TAC.overall).sort((a, b) => b - a).slice(0, 14);
+    return U.avg(o);
+  }
+  /* Хочет ли амбициозный игрок в клуб уровнем выше */
+  function outgrown(p, club) {
+    const h = p.h || {};
+    return (h.amb || 10) >= 14 && TAC.overall(p) >= clubCore(club) + 1 && ((club.fin && club.fin.target) || 10) > 6;
+  }
+  function moodLabel(m) {
+    return m >= 80 ? ['Счастлив', '😄'] : m >= 60 ? ['Доволен', '🙂'] : m >= 40 ? ['Нейтрален', '😐'] : m >= 20 ? ['Недоволен', '😒'] : ['Хочет уйти', '😠'];
+  }
+
+  /* Требование игрока при продлении (фиксируется на сезон).
+     Амбиции поднимают зарплату и упорство, преданность даёт скидку и терпение, настроение — надбавку или отказ. */
+  function demand(st, p, club) {
     if (p.dem && p.dem.season === st.season) return p.dem;
-    let w = fairWage(p) * (1 + TAC.formBonus(p) * 0.06) * (0.95 + U.rnd() * 0.2);
+    const h = p.h || { amb: 10, loy: 10, pro: 10, tem: 10 };
+    const mood = p.mood == null ? 60 : p.mood;
+    let w = fairWage(p) * (1 + TAC.formBonus(p) * 0.06) * (0.95 + U.rnd() * 0.15);
     if (p.st && p.st.apps >= 5) w *= U.clamp(1 + (p.st.rsum / p.st.apps - 6.5) * 0.12, 0.9, 1.15);
     if (p.age >= 31) w *= 0.9;
-    const years = p.age <= 23 ? [3, 5] : p.age <= 29 ? [2, 4] : [1, 2];
-    p.dem = { season: st.season, wage: Math.round(Math.max(w, p.wage * 0.85)), years, tries: 2 };
+    w *= 1 + (h.amb - 10) * 0.025;          // амбиции: до ±25%
+    w *= 1 - (h.loy - 10) * 0.012;          // преданность: скидка «для своих»
+    w *= mood < 35 ? 1.1 : mood > 80 ? 0.95 : 1;
+    let years = p.age <= 23 ? [3, 5] : p.age <= 29 ? [2, 4] : [1, 2];
+    const big = club ? outgrown(p, club) : false;
+    if (big) { w *= 1.15; years = [1, 2]; }
+    else if (h.loy >= 14) years = [years[0], Math.min(5, years[1] + 1)];
+    let refuse = null;
+    if (mood < 20) refuse = 'Игрок недоволен своим положением и не намерен продлевать контракт.';
+    else if (big && h.amb >= 17 && mood < 55) refuse = 'Игрок хочет перейти в клуб, который борется за титулы, и отказывается от продления.';
+    const tries = U.clamp(2 + (h.loy >= 14 ? 1 : 0) - (h.amb >= 16 ? 1 : 0), 1, 3);
+    p.dem = { season: st.season, wage: Math.round(Math.max(w, p.wage * 0.85)), years, tries, refuse, big };
     return p.dem;
   }
+
+  /* Реплики агента и игрока: косвенно выдают скрытый характер */
+  function agentNotes(p, club) {
+    const h = p.h || {}, n = [];
+    if (outgrown(p, club)) n.push('Агент: «Мой клиент перерос этот уровень. Он хочет играть в Лиге чемпионов — нужно очень серьёзное предложение».');
+    if (h.amb >= 15) n.push('Агент: «Он знает себе цену и не привык уступать».');
+    else if (h.amb <= 6) n.push('Агент: «Деньги для него не главное — лишь бы получать игровое время».');
+    if (h.loy >= 15) n.push('Игрок не раз говорил, что любит этот клуб и хотел бы здесь остаться.');
+    else if (h.loy <= 6) n.push('Агент намекает, что интерес к игроку есть и у других клубов.');
+    const m = p.mood == null ? 60 : p.mood;
+    if (m < 35) n.push('Игрок недоволен своей ролью в команде — это скажется на требованиях.');
+    else if (m > 80) n.push('Игрок счастлив в клубе и настроен на диалог.');
+    if (!n.length) n.push('Агент: «Мы открыты к разговору, если условия будут честными».');
+    return n;
+  }
+  /* Мнение тренерского штаба о характере своих игроков */
+  function staffNotes(p) {
+    const h = p.h || {}, n = [];
+    if (h.pro >= 15) n.push('Первым приходит на тренировку и последним уходит — образцовый профессионал.');
+    else if (h.pro <= 6) n.push('Бывает, опаздывает на тренировки и не следит за режимом.');
+    if (h.tem >= 15) n.push('Взрывной характер: болезненно переносит скамейку и может высказаться в прессе.');
+    else if (h.tem <= 6) n.push('Невозмутим, никогда не выносит сор из избы.');
+    if (h.amb >= 16) n.push('Очень амбициозен: хочет играть всегда и только за трофеи.');
+    return n;
+  }
+
   function initContract(p, rng) {
     rng = rng || Math.random;
     const maxY = p.age >= 32 ? 2 : p.age >= 29 ? 3 : 5;
@@ -93,7 +146,10 @@
   /* Инициализация финансов для новой игры или старого сохранения */
   function init(st) {
     const rng = U.seeded(4242 + (st.season || 1));
-    st.clubs.forEach(c => c.players.forEach(p => { if (p.contract == null || p.wage == null) initContract(p, rng); }));
+    st.clubs.forEach(c => c.players.forEach(p => {
+      if (p.contract == null || p.wage == null) initContract(p, rng);
+      if (!p.h) G.DATA.rollHidden(p, rng);
+    }));
     const exp = expectedPositions(st);
     st.clubs.forEach(c => {
       if (!c.fin) {
@@ -134,6 +190,7 @@
       c.fin.hist.push(c.fin.balance);
       if (c.fin.hist.length > 80) c.fin.hist.shift();
     }
+    moodRound(st);
     if (st.userClub) { boardRound(st); contractReminder(st); }
   }
 
@@ -187,7 +244,7 @@
         p.contract = (p.contract || 1) - 1;
         if (p.contract > 0) return;
         if (c.id === st.userClub) leaving.push(p);
-        else { const d = demand(st, p); p.wage = d.wage; p.contract = U.randInt(d.years[0], d.years[1]); }
+        else { const d = demand(st, p, c); p.wage = d.wage; p.contract = U.randInt(d.years[0], d.years[1]); }
       });
       if (leaving.length) {
         c.players = c.players.filter(p => !leaving.includes(p));
@@ -223,26 +280,71 @@
 
   /* Продление контракта игроком-пользователем */
   function renew(st, club, p, wage, years) {
-    const d = demand(st, p);
+    const d = demand(st, p, club);
+    const h = p.h || { amb: 10, loy: 10 };
+    if (d.refuse) return { ok: false, msg: `${p.name}: ${d.refuse}` };
     if (d.tries <= 0) return { ok: false, msg: `${p.name} больше не хочет обсуждать контракт в этом сезоне.` };
     const newBill = wageBill(club) - p.wage + wage;
     if (newBill > club.fin.wageBudget) return { ok: false, msg: `Совет директоров не одобрит: ведомость (${newBill} тыс./нед) превысит бюджет зарплат (${club.fin.wageBudget} тыс./нед).` };
     const yearsOk = years >= d.years[0] && years <= d.years[1];
-    let need = d.wage * (yearsOk ? 1 : 1.08);
-    let accept = wage >= need || (wage >= need * 0.9 && U.rnd() < (wage - need * 0.9) / (need * 0.1));
+    const need = d.wage * (yearsOk ? 1 : 1.08 + Math.max(0, h.amb - 10) * 0.005);
+    // «зона торга» ниже требования: шире у преданных, уже у амбициозных
+    const zone = U.clamp(0.06 + (h.loy - 10) * 0.006 - (h.amb - 10) * 0.005, 0.01, 0.14);
+    const accept = wage >= need || (wage >= need * (1 - zone) && U.rnd() < (wage - need * (1 - zone)) / (need * zone));
     if (!accept) {
       d.tries--;
-      d.wage = Math.round(d.wage * 1.05);
+      d.wage = Math.round(d.wage * (1.02 + h.amb * 0.0025));
+      if (p.mood != null) p.mood = Math.max(0, p.mood - (2 + Math.max(0, h.amb - 10) * 0.5));
       return { ok: false, msg: d.tries > 0 ? `${p.name} отклоняет предложение и поднимает требования до ${d.wage} тыс./нед.` : `${p.name} обиделся и прекращает переговоры до конца сезона.` };
     }
     p.wage = Math.round(wage);
     p.contract = years;
     p.dem = null;
+    if (p.mood != null) p.mood = Math.min(100, p.mood + 10);
     return { ok: true, msg: `${p.name} подписывает новый контракт: ${p.wage} тыс. £/нед на ${years} ${U.plural(years, 'год', 'года', 'лет')}.` };
+  }
+
+  /* Настроение после тура: игровое время, важность игрока, амбиции, результат */
+  function moodRound(st) {
+    const rd = st.fixtures[st.round] || [];
+    const res = {};
+    rd.forEach(f => { if (!f.res) return; const d = Math.sign(f.res.hs - f.res.as); res[f.h] = d; res[f.a] = -d; });
+    for (const c of st.clubs) {
+      const core = clubCore(c);
+      for (const p of c.players) {
+        if (!p.h) continue;
+        if (p.mood == null) p.mood = 65;
+        const amb = p.h.amb;
+        if (p.lp === st.round) p.mood += 2.5 + (res[c.id] > 0 ? 1 : 0);
+        else if (TAC.available(p)) {
+          const imp = U.clamp((TAC.overall(p) - core) / 2 + 1, 0, 3);
+          p.mood -= (1.2 + imp * 1.4) * (0.4 + amb / 16);
+        }
+        if (res[c.id] != null) p.mood += res[c.id] * (amb / 10);
+        p.mood += (60 - p.mood) * 0.06;
+        p.mood = U.clamp(p.mood, 0, 100);
+        // жалобы в прессе (клуб пользователя)
+        if (c.id === st.userClub && p.mood < 30 && p.h.tem >= 12 && (p.cmp || -99) < st.round - 6 && U.rnd() < 0.12 + (p.h.tem - 12) * 0.03) {
+          p.cmp = st.round;
+          st.news.push({ r: st.round, text: `😤 ${p.name} публично жалуется в прессе на нехватку игрового времени. Совет директоров недоволен шумом вокруг команды.` });
+          if (st.board) st.board.conf = Math.max(0, st.board.conf - 1.5);
+        }
+      }
+    }
+  }
+
+  /* Штраф за удаление (2 недельные зарплаты), вспыльчивые реагируют на штраф */
+  function fines(st, club, p) {
+    if (!club.fin) return;
+    const fine = Math.round(p.wage * 2);
+    club.fin.balance += fine / 1000;
+    club.fin.season.ops += fine / 1000;
+    if (p.h && p.h.tem >= 14) p.mood = Math.max(0, (p.mood || 60) - 8);
+    if (club.id === st.userClub) st.news.push({ r: st.round, text: `💷 Клуб оштрафовал ${p.name} на £${fine} тыс. за удаление.${p.h && p.h.tem >= 14 ? ' Игрок воспринял штраф болезненно.' : ''}` });
   }
 
   const fmtM = v => (v < 0 ? '−' : '') + '£' + Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1) + ' млн';
   const fmtW = v => '£' + Math.round(v) + ' тыс./нед';
 
-  G.FIN = { CAPACITY, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
+  G.FIN = { CAPACITY, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
 })(typeof window !== 'undefined' ? window : globalThis);

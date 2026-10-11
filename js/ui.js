@@ -15,6 +15,7 @@
       FX.init();
       UI.renewHook = {
         can: (p, club) => this.st && club.id === this.st.userClub && p.contract <= 2,
+        own: (club) => this.st && club.id === this.st.userClub,
         open: (p, club) => this.renewModal(p, club)
       };
       try { SFX.on = localStorage.getItem('m3-sound') !== 'off'; } catch (e) { /* */ }
@@ -675,12 +676,12 @@
       // контракты
       const cc = el('div.card.wide-card', null, [el('div.round-h', null, [el('h3', { text: 'Контракты' }), own ? el('button.btn.small', { text: '✍ Продлить всех истекающих на их условиях', onclick: () => this.renewAll(club) }) : null])]);
       const tbl = el('table.squad');
-      tbl.appendChild(el('thead', null, [el('tr', null, ['Поз', 'Игрок', 'Воз', 'Рейт', 'Форма', 'Стоимость', 'Зарплата', 'Контракт', ''].map(t => el('th', { text: t })))]));
+      tbl.appendChild(el('thead', null, [el('tr', null, ['Поз', 'Игрок', 'Воз', 'Рейт', 'Форма', 'Настр.', 'Стоимость', 'Зарплата', 'Контракт', ''].map(t => el('th', { text: t })))]));
       const tb = el('tbody');
       club.players.slice().sort((a, b) => a.contract - b.contract || b.wage - a.wage).forEach(p => {
         const tr = el('tr', { onclick: () => UI.playerModal(p, club) }, [
           el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]), el('td.pname', null, [p.name + (p.star ? ' ★ ' : ' '), UI.traitIcons(p)]), el('td', { text: p.age }),
-          el('td', null, [el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })]), el('td', null, [UI.formBadge(p)]),
+          el('td', null, [el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })]), el('td', null, [UI.formBadge(p)]), el('td', { text: G.FIN.moodLabel(p.mood == null ? 60 : p.mood)[1], title: G.FIN.moodLabel(p.mood == null ? 60 : p.mood)[0] }),
           el('td', { text: G.FIN.fmtM(G.FIN.value(p)) }), el('td', { text: G.FIN.fmtW(p.wage) }),
           el('td' + (p.contract <= 1 ? '.ctr-warn' : ''), { text: p.contract <= 1 ? 'истекает летом' : `${p.contract} ${U.plural(p.contract, 'сезон', 'сезона', 'сезонов')}` }),
           el('td', null, [own && p.contract <= 2 ? el('button.btn.small', { text: 'Продлить', onclick: (e) => { e.stopPropagation(); this.renewModal(p, club); } }) : null])
@@ -696,7 +697,11 @@
 
     renewModal(p, club) {
       const st = this.st;
-      const d = G.FIN.demand(st, p);
+      const d = G.FIN.demand(st, p, club);
+      if (d.refuse) {
+        UI.modal({ title: 'Переговоры о контракте', content: el('div.renew', null, [el('div.pc-name', { text: p.name }), el('p', { text: d.refuse }), el('div.agent', null, G.FIN.agentNotes(p, club).map(t => el('div', { text: '💬 ' + t })))]), buttons: [{ text: 'Понятно', cls: 'ghost' }] });
+        return;
+      }
       if (d.tries <= 0) { UI.toast(`${p.name} не хочет обсуждать контракт до конца сезона`, 'warn'); return; }
       const state = { wage: d.wage, years: Math.round((d.years[0] + d.years[1]) / 2) };
       const content = el('div.renew');
@@ -720,6 +725,7 @@
       [1, 2, 3, 4, 5].forEach(y => yrs.appendChild(el('button' + (y === state.years ? '.on' : ''), { text: y + ' ' + U.plural(y, 'год', 'года', 'лет'), onclick: (e) => { state.years = y; U.$$('button', yrs).forEach(b => b.classList.remove('on')); e.target.classList.add('on'); redraw(); } })));
       const hint = el('div.renew-hint');
       content.append(el('div.pc-head', null, [el('div', null, [el('div.pc-name', { text: p.name }), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · стоимость ${G.FIN.fmtM(G.FIN.value(p))}` })])]),
+        el('div.agent', null, G.FIN.agentNotes(p, club).map(t => el('div', { text: '💬 ' + t }))),
         info, el('div.renew-row', null, [el('span', { text: 'Зарплата' }), slider, wageVal]), el('div.renew-row', null, [el('span', { text: 'Срок' }), yrs]), hint);
       redraw();
       UI.modal({ title: 'Переговоры о контракте', content, buttons: [{ text: 'Отмена', cls: 'ghost', value: false }, { text: 'Предложить', cls: 'primary', value: true }] }).result.then(v => {
@@ -738,7 +744,8 @@
       if (!list.length) { UI.toast('Нет истекающих контрактов'); return; }
       const ok = [], fail = [];
       list.sort((a, b) => TAC.overall(b) - TAC.overall(a)).forEach(p => {
-        const d = G.FIN.demand(st, p);
+        const d = G.FIN.demand(st, p, club);
+        if (d.refuse) { fail.push(p.name + ' (отказывается продлевать)'); return; }
         if (d.tries <= 0) { fail.push(p.name + ' (отказ от переговоров)'); return; }
         const r = G.FIN.renew(st, club, p, d.wage, Math.round((d.years[0] + d.years[1]) / 2));
         (r.ok ? ok : fail).push(r.ok ? p.name : p.name + (r.msg.includes('бюджет') ? ' (нет бюджета)' : ''));
@@ -862,6 +869,7 @@
         el('p', { text: 'Форма — взвешенная средняя оценок за 5 последних матчей (последний важнее всего). Отличная форма даёт до +2 ко всем характеристикам в матче, ужасная — до −2. Стрелки ⇈ ↑ → ↓ ⇊ видны в составе и на схеме; тренеры-ИИ и автосостав учитывают форму. В межсезонье характеристики меняются в зависимости от возраста, средней оценки (выше 7.0 — сильнее растут или медленнее стареют, ниже 6.3 — наоборот) и игровой практики.' }),
         el('h4', { text: 'Финансы и контракты' }),
         el('p', { text: 'Клуб получает телеправа и спонсорские деньги каждый тур, выручку от билетов — за домашние матчи, призовые — в конце сезона (зависят от места, 1–6 места дают еврокубковые премии). Расходы — зарплаты и операционные траты. Стоимость игрока зависит от рейтинга, возраста, формы, оценок, особенностей и срока контракта. Продлевайте контракты в разделе «Финансы»: игрок называет требования, а совет директоров не даст выйти за бюджет зарплат. Непродлённые игроки летом уходят бесплатно. Совет следит за местом относительно цели и за финансами.' }),
+        el('p', { text: 'У каждого игрока есть скрытый характер — амбиции, преданность, профессионализм и темперамент. Цифр не видно, но их выдают реплики агента в переговорах и мнение тренерского штаба в карточке. Амбициозные просят больше и упорнее торгуются, а если переросли клуб — хотят уйти; преданные идут на уступки; профессионалы лучше прогрессируют и быстрее восстанавливаются; вспыльчивые жалуются в прессе на скамейку. Настроение игрока зависит от игрового времени и результатов и влияет на переговоры.' }),
         el('h4', { text: 'Особенности игроков' }),
         el('p', null, [`У игроков есть особенности (всего ${Object.keys(G.TRAITS.LIST).length}): «Спорит с судьями», «Бьёт при первой возможности», «Передерживает мяч», «Решает в концовке», «Хрупкий» и другие. Они срабатывают, пока игрок на поле, и меняют силу блоков, удары, фолы, карточки, усталость и травмы. Значки видны в составе и на схеме — наведите на значок, чтобы прочитать эффект. `, el('button.btn.ghost.small', { text: 'Все особенности', onclick: () => UI.traitsGuide() })]),
         el('p', { text: 'Тренеры-ИИ выбирают схему и план исходя из своих предпочтений, состава и силы соперника, а по ходу матча реагируют на счёт, усталость и удаления. В перерыве, на 60-й и 75-й минутах тренер разбирает игру: если команду душат прессингом, техничный состав переходит на «Владение», а слабый технически — на «Прямой футбол»; против низкого блока идёт через фланги или бьёт издали, против высокой линии — на рывки за спину; опускает линию против быстрых нападающих, снижает прессинг при усталости и карточках, добавляет полузащитника, если проигрывает центр.'})

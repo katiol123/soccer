@@ -626,7 +626,7 @@ td.pname { font-weight: 700; }
 .pc-fin { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .pc-fin > div { flex: 1; min-width: 110px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.05); }
 .pc-fin small, .cd-fin small, .renew-info small { display: block; color: var(--muted); font-size: 11px; }
-.pc-fin b, .cd-fin b { font-family: var(--fh); font-size: 14px; }
+.pc-fin b, .cd-fin b { font-family: var(--fh); font-size: 13px; white-space: nowrap; }
 .pc-fin .warn b { color: #ffb347; }
 .cd-fin { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .cd-fin > div { padding: 8px 10px; border-radius: 10px; background: rgba(0,0,0,.25); }
@@ -639,6 +639,9 @@ td.pname { font-weight: 700; }
 .renew-hint { color: #ffb347; font-size: 13px; min-height: 18px; }
 @media (max-width: 1000px) { .kpis { grid-template-columns: 1fr 1fr; } .fin-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .renew-info, .cd-fin { grid-template-columns: 1fr; } .renew-row { grid-template-columns: 1fr; } }
+
+.agent { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 12px; background: rgba(139,92,246,.1); border: 1px solid rgba(139,92,246,.3); font-size: 13px; color: #ddd3ff; }
+.agent small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
 
 /* тосты */
 #toast-root { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; z-index: 70; pointer-events: none; }
