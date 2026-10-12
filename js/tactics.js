@@ -82,10 +82,14 @@
 
   /* Жадный подбор лучших 11 под схему с учётом свежести */
   /* Форма: средняя оценка последних матчей (взвешенная) → бонус ко всем характеристикам от −2 до +2 */
-  const FORM_NEUTRAL = 6.45, FORM_STEP = 0.45;
+  /* Типичная (средняя) оценка по позиции — точка отсчёта для формы, развития, стоимости.
+     Обновлять при изменении формулы оценок в движке (замер по полному сезону всех лиг). */
+  const RATING_NORM = { GK: 6.7, DF: 6.55, MF: 6.55, FW: 6.55 };
+  const ratingNorm = p => RATING_NORM[p && p.pos] || 6.56;
+  const FORM_NEUTRAL = 6.56, FORM_STEP = 0.45;
   function formBonus(p) {
-    const f = p.form == null ? FORM_NEUTRAL : p.form;
-    return Math.round(Math.max(-2, Math.min(2, (f - FORM_NEUTRAL) / FORM_STEP)) * 10) / 10;
+    const n = ratingNorm(p), f = p.form == null ? n : p.form;
+    return Math.round(Math.max(-2, Math.min(2, (f - n) / FORM_STEP)) * 10) / 10;
   }
   /* Форма = взвешенная средняя последних 5 оценок (свежие важнее: 5,4,3,2,1).
      Пока сыграно меньше 3 матчей, недостающие считаются нейтральными. */
@@ -94,8 +98,8 @@
     const r = (p.lastR || []).slice(-5).reverse();
     let s = 0, w = 0;
     r.forEach((v, i) => { s += v * FORM_W[i]; w += FORM_W[i]; });
-    for (let i = r.length; i < 3; i++) { s += FORM_NEUTRAL * FORM_W[i]; w += FORM_W[i]; }
-    return w ? s / w : FORM_NEUTRAL;
+    for (let i = r.length; i < 3; i++) { s += ratingNorm(p) * FORM_W[i]; w += FORM_W[i]; }
+    return w ? s / w : ratingNorm(p);
   }
   function formLabel(b) {
     return b >= 1.5 ? 'Отличная' : b >= 0.5 ? 'Хорошая' : b > -0.5 ? 'Обычная' : b > -1.5 ? 'Плохая' : 'Ужасная';
@@ -169,5 +173,5 @@
     };
   }
 
-  const TAC = G.TAC = { cupMode: false, ROLES, FORMATIONS, PLANS, MENTALITY, PRESSING, LINE, NAT_ROLES, lineSuit, roleRating, roleRatingRaw, overall, bestRole, bestXI, lineupRating, teamRating, defaultTactics, playerMap, available, formBonus, formLabel, computeForm, FORM_NEUTRAL };
+  const TAC = G.TAC = { cupMode: false, ROLES, FORMATIONS, PLANS, MENTALITY, PRESSING, LINE, NAT_ROLES, lineSuit, roleRating, roleRatingRaw, overall, bestRole, bestXI, lineupRating, teamRating, defaultTactics, playerMap, available, formBonus, formLabel, computeForm, FORM_NEUTRAL, RATING_NORM, ratingNorm };
 })(typeof window !== 'undefined' ? window : globalThis);

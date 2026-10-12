@@ -322,10 +322,10 @@
       for (const p of ts.club.players) {
         if (!p.m || !p.m.played) continue;
         if (p.m.played) {
-          if (fixture.cup) { const cs = p.cst || (p.cst = { apps: 0, goals: 0, assists: 0, rsum: 0 }); cs.apps++; cs.goals += p.m.goals; cs.assists += p.m.assists; cs.rsum = (cs.rsum || 0) + (p.m.rating || 6.5); }
+          if (fixture.cup) { const cs = p.cst || (p.cst = { apps: 0, goals: 0, assists: 0, rsum: 0 }); cs.apps++; cs.goals += p.m.goals; cs.assists += p.m.assists; cs.rsum = (cs.rsum || 0) + (p.m.rating || TAC.ratingNorm(p)); }
           else {
             p.st.apps++; p.st.goals += p.m.goals; p.st.assists += p.m.assists;
-            p.st.yc += p.m.yc; p.st.rsum += p.m.rating || 6.5;
+            p.st.yc += p.m.yc; p.st.rsum += p.m.rating || TAC.ratingNorm(p);
           }
           p.lp = st.round;
           // дисквалификации раздельные: лига — за лигу, кубок — за кубок (3 жёлтые в кубке — пропуск матча)
@@ -338,7 +338,7 @@
           }
           if (p.m.inj) p.inj = Math.max(1, U.randInt(1, 4) + (p.h && p.h.pro >= 15 ? -1 : p.h && p.h.pro <= 6 ? 1 : 0));
           p.fit = Math.round(p.m.fit);
-          p.lastR = (p.lastR || []).concat([p.m.rating || 6.5]).slice(-5);
+          p.lastR = (p.lastR || []).concat([p.m.rating || TAC.ratingNorm(p)]).slice(-5);
           p.form = TAC.computeForm(p);
           if (!motm || (p.m.rating || 0) > (motm.m.rating || 0)) motm = p;
         }
@@ -551,9 +551,10 @@
   /* Развитие игрока за межсезонье: возраст + средняя оценка + игровое время */
   function develop(p) {
     // кубковые матчи тоже идут в зачёт: в игровое время — с коэффициентом 0.8
-    const capps = p.cst ? p.cst.apps : 0, crs = p.cst ? (p.cst.rsum || capps * 6.5) : 0;
+    const capps = p.cst ? p.cst.apps : 0, crs = p.cst ? (p.cst.rsum || capps * TAC.ratingNorm(p)) : 0;
     const apps = p.st.apps + capps, avg = apps ? (p.st.rsum + crs) / apps : null;
-    const grade = apps < 5 ? 'few' : avg > 7.0 ? 'good' : avg < 6.3 ? 'bad' : 'ok';
+    const nrm = TAC.ratingNorm(p);   // пороги — относительно типичной оценки для позиции
+    const grade = apps < 5 ? 'few' : avg > nrm + 0.45 ? 'good' : avg < nrm - 0.3 ? 'bad' : 'ok';
     const play = U.clamp((p.st.apps + capps * 0.8) / 19, 0.25, 1);
     const pro = p.h ? p.h.pro : 10;
     const loanK = p.loanExp >= 15 ? 1.25 : p.loanExp >= 8 ? 1.1 : 1; // практика в аренде ускоряет рост
@@ -605,7 +606,9 @@
     st.clubs.forEach(c => { if (!c.league) c.league = st.lg; if (c.cap == null) c.cap = DATA.CAPACITY[c.id] || 30; });
     attach(st);
     if (G.TRAITS) G.TRAITS.ensure(st.clubs);
-    st.clubs.forEach(c => c.players.forEach(p => { if (!p.lastR) { p.lastR = []; p.form = TAC.computeForm(p); } }));
+    // форма пересчитывается всегда: точка отсчёта — типичная оценка позиции (могла измениться между версиями)
+    st.clubs.forEach(c => c.players.forEach(p => { if (!p.lastR) p.lastR = []; p.form = TAC.computeForm(p); }));
+    (st.fa || []).forEach(p => { if (!p.lastR) p.lastR = []; p.form = TAC.computeForm(p); });
     G.FIN.init(st);
     G.CAR.ensure(st);
     return st;

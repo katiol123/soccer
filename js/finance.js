@@ -67,7 +67,7 @@
   function value(p) {
     let v = baseValue(p) * ageK(p.age);
     v *= 1 + TAC.formBonus(p) * 0.05;
-    if (p.st && p.st.apps >= 5) v *= U.clamp(1 + (p.st.rsum / p.st.apps - 6.5) * 0.15, 0.85, 1.2);
+    if (p.st && p.st.apps >= 5) v *= U.clamp(1 + (p.st.rsum / p.st.apps - (G.TAC.ratingNorm(p) - 0.1)) * 0.15, 0.85, 1.2);
     for (const id of (p.tr || [])) {
       const t = G.TRAITS.LIST[id];
       if (!t) continue;
@@ -105,7 +105,7 @@
     const h = p.h || { amb: 10, loy: 10, pro: 10, tem: 10 };
     const mood = p.mood == null ? 60 : p.mood;
     let w = fairWage(p) * (1 + TAC.formBonus(p) * 0.06) * (0.95 + U.rnd() * 0.15);
-    if (p.st && p.st.apps >= 5) w *= U.clamp(1 + (p.st.rsum / p.st.apps - 6.5) * 0.12, 0.9, 1.15);
+    if (p.st && p.st.apps >= 5) w *= U.clamp(1 + (p.st.rsum / p.st.apps - (G.TAC.ratingNorm(p) - 0.1)) * 0.12, 0.9, 1.15);
     if (p.age >= 31) w *= 0.9;
     w *= 1 + (h.amb - 10) * 0.025;          // амбиции: до ±25%
     w *= 1 - (h.loy - 10) * 0.012;          // преданность: скидка «для своих»

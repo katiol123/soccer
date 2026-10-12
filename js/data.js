@@ -148,7 +148,7 @@
     }
     const pl = {
       id, club: club.id, name, pos, age, num, role: arch.n, star: !!star,
-      a, fit: 100, form: 6.45, lastR: [], inj: 0, susp: 0, yc: 0,
+      a, fit: 100, form: null, lastR: [], inj: 0, susp: 0, yc: 0,
       st: { apps: 0, goals: 0, assists: 0, yc: 0, rc: 0, rsum: 0 }
     };
     pl.tr = G.TRAITS ? G.TRAITS.roll(pl, rng) : [];

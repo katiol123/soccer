@@ -597,7 +597,7 @@
     for (const p of all) {
       const L = p.loan, cur = club(st, L.to), owner = club(st, L.from);
       const apps = (p.st.apps || 0) - (L.apps0 || 0), avg = p.st.apps ? p.st.rsum / p.st.apps : 0;
-      if (L.option && cur.id !== st.userClub && apps >= 12 && avg >= 6.9 && L.option <= (cur.fin.transferBudget || 0) * 1.2) {
+      if (L.option && cur.id !== st.userClub && apps >= 12 && avg >= TAC.ratingNorm(p) + 0.25 && L.option <= (cur.fin.transferBudget || 0) * 1.2) {
         const r = exerciseOption(st, p);
         if (owner.id === st.userClub || !st.userClub) st.news.push({ r: 0, text: `💰 ${r.msg}` });
         continue;
