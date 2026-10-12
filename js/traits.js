@@ -72,6 +72,12 @@
     pacey: T('Быстрый защитник', '💨', '+', 'Рывки соперника против команды −8%.', { team: { oppPac: 0.92 } }, p => DF(p) && p.a.pac >= 15 ? 2.5 : 0),
     slowDef: T('Неповоротливый', '🐌', '−', 'Рывки соперника против команды +10%.', { team: { oppPac: 1.1 } }, p => DF(p) && p.a.pac <= 9 ? 2 : 0),
 
+    /* --- новые: атака и передачи --- */
+    overlap: T('Подключается к атакам', '🏃', '±', 'Защитник регулярно оказывается в чужой штрафной: бьёт втрое чаще обычного защитника и чаще отдаёт передачи. Но оставляет свою зону — рывки соперника против команды +4%.', { me: { shotW: 3, assistW: 1.6, attackW: 2.2 }, team: { oppPac: 1.04 } }, p => DF(p) ? (p.a.pac >= 13 || p.a.sho >= 11 ? 1.6 : 0.5) : 0),
+    bicycle: T('Бьёт через себя', '🤸', '±', 'Иногда (примерно каждый седьмой удар в штрафной) пробует удар через себя: шанс гола вдвое ниже, но трибуны в восторге — настроение болельщиков сразу немного растёт, а после гола — заметно.', {}, p => FW(p) ? (p.a.dri >= 13 ? 1.2 : 0.4) : 0),
+    finalPass: T('Последний пас', '🎯', '+', 'Передачи под удар у чужой штрафной заряжают шкалу момента на 50% сильнее, ошибается в них реже.', {}, p => (MF(p) || FW(p)) && p.a.pas >= 15 ? 1.8 : MF(p) ? 0.4 : 0),
+    riskyPass: T('Рискованный пас', '🎲', '±', 'Ищет обостряющую передачу: удачные заряжают шкалу момента на 60% сильнее, но ошибается он заметно чаще.', {}, p => MF(p) ? (p.a.pas >= 12 && p.a.pas <= 16 ? 1.1 : 0.4) : 0),
+
     /* --- вратари --- */
     sweeper: T('Вратарь-чистильщик', '🧹', '+', 'Рывки соперника −12%, после сейвов быстрее вводит мяч (+30% темпа).', { team: { oppPac: 0.88, gkDist: 1.3 } }, p => GK(p) ? (p.a.pac >= 8 || p.a.pas >= 12 ? 3 : 1) : 0),
     penStopper: T('Мастер пенальти', '🧤', '+', 'Отражает пенальти на 12% чаще.', { me: { penSave: 0.12 } }, p => GK(p) ? (p.a.ref >= 15 ? 2 : 1) : 0),
@@ -82,7 +88,7 @@
   };
 
   const CONFLICTS = [['hard', 'clean'], ['engine', 'glass'], ['glass', 'iron'], ['selfish', 'vision'], ['nervous', 'bigGame'], ['nervous', 'leader'], ['nervous', 'penalty'], ['nervous', 'clutch'], ['nervous', 'calm'],
-    ['hothead', 'calm'], ['lazy', 'presser'], ['lazy', 'engine'], ['homeBird', 'traveller'], ['inconsistent', 'steady'], ['bigGame', 'flatTrack'], ['powerShot', 'finesse'], ['pacey', 'slowDef'], ['oneOnOne', 'shaky']];
+    ['hothead', 'calm'], ['lazy', 'presser'], ['lazy', 'engine'], ['homeBird', 'traveller'], ['inconsistent', 'steady'], ['bigGame', 'flatTrack'], ['powerShot', 'finesse'], ['pacey', 'slowDef'], ['oneOnOne', 'shaky'], ['finalPass', 'riskyPass']];
 
   /* Вратарям доступны только «характерные» и вратарские особенности */
   const GK_OK = new Set(['argue', 'hothead', 'calm', 'leader', 'nervous', 'clutch', 'bigGame', 'flatTrack', 'homeBird', 'traveller', 'inconsistent', 'steady', 'slowStarter', 'glass', 'iron',

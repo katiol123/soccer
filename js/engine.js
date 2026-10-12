@@ -295,7 +295,7 @@
     pickPlayer(side, attr, phase, exclude) {
       const list = this.t[side].onPitch.filter(x => x.p && x.slot.role !== 'GK' && x.p !== exclude);
       if (!list.length) return null;
-      const it = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[phase] + 0.02, 1.5) * Math.pow(this.pa(x.p, attr), 1.6));
+      const it = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[phase] + 0.02, 1.5) * Math.pow(this.pa(x.p, attr), 1.6) * (phase === 'front' ? this.pm(x.p, 'attackW') : 1));
       return it.p;
     }
     plan(side) { return this.t[side].tac.plan; }
@@ -386,11 +386,13 @@
             const lost = Math.min(me.shotCharge, 8 + U.rnd() * 6), cc = 6 + U.rnd() * 6;
             me.shotCharge -= lost;
             opp.counterCharge = Math.min(70, opp.counterCharge + cc);
+            passer.m.perf -= 0.07;   // ошибка снижает оценку
             fx.push({ k: 'charge', t: 1, text: `Неточный пас: −${Math.round(lost)} к моменту` });
             if (this.log && U.rnd() < 0.5) this.say('info', `${this.pname(passer)} ошибается с передачей — соперник готовит ответный выпад.`, side);
           } else {
             const v = this.passCharge(passer, c[1]);
             me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
+            passer.m.perf += 0.05;   // удачная передача под удар повышает оценку
             fx.push({ k: 'charge', t: 1, text: `+${Math.round(v)} передача под удар` });
           }
         }
@@ -635,11 +637,12 @@
     }
     /* Передача под удар у чужой штрафной: удачная заряжает шкалу «к моменту», неудачная — сбивает её
        и заряжает контратаку соперника. Шанс ошибки тем выше, чем ниже Пас */
-    passMissP(p) { return U.clamp(0.26 - (this.pa(p, 'pas') - 10) * 0.022 - (TRAITS.has(p, 'vision') ? 0.05 : 0) + (1 - this.fatF(p)) * 0.6, 0.05, 0.5); }   // усталость: при 50% свежести ≈ +8%
+    passMissP(p) { return U.clamp(0.26 - (this.pa(p, 'pas') - 10) * 0.022 - (TRAITS.has(p, 'vision') ? 0.05 : 0) - (TRAITS.has(p, 'finalPass') ? 0.06 : 0) + (TRAITS.has(p, 'riskyPass') ? 0.08 : 0) + (1 - this.fatF(p)) * 0.6, 0.05, 0.55); }   // усталость: при 50% свежести ≈ +8%
     passCharge(p, n) {
       let b = 3 + (this.pa(p, 'pas') - 10) * 0.9 * Math.min(1.6, 0.7 + n * 0.15);
       if (TRAITS.has(p, 'vision')) b += 3;
-      return U.clamp(b * this.fatF(p), 2, 16);   // уставший отдаёт пас хуже
+      b *= TRAITS.has(p, 'finalPass') ? 1.5 : TRAITS.has(p, 'riskyPass') ? 1.6 : 1;
+      return U.clamp(b * this.fatF(p), 2, 22);   // уставший отдаёт пас хуже
     }
 
     turnover(newSide, reason, fx) {
@@ -787,6 +790,14 @@
       if (this.counter && this.counter.side === side) q *= 1.15;
       if (ctx.critical) q *= 1.25;
       q = U.clamp(q, 0.02, 0.72);
+      // удар через себя: шанс вдвое ниже, но трибуны в восторге
+      this._bike = false;
+      if ((kind === 'box' || kind === 'header') && TRAITS.has(shooter, 'bicycle') && U.rnd() < 0.15) {
+        this._bike = true; q /= 2;
+        const cl = me.club; cl.fans = Math.min(100, (cl.fans == null ? 60 : cl.fans) + 1);
+        fx.push({ k: 'event', text: 'УДАР ЧЕРЕЗ СЕБЯ!' });
+        if (this.log) this.say('trait', `${this.traitNote(shooter, 'bicycle')} взмывает в воздух — удар через себя!`, side);
+      }
       me.st.shots++; me.st.xg += q;
       me.shotCharge = 0;
       const label = { box: 'удар', long: 'дальний удар', vlong: 'удар метров с тридцати пяти', header: 'удар головой', fk: 'штрафной' }[kind];
@@ -837,6 +848,12 @@
       const me = this.t[side], opp = this.t[OTHER(side)];
       this.score[side]++; me.st.goals++;
       scorer.m.goals++; scorer.m.perf += 1.1;
+      if (this._bike) {   // гол ударом через себя — стадион сходит с ума
+        scorer.m.perf += 0.4;
+        const cl = me.club; cl.fans = Math.min(100, (cl.fans == null ? 60 : cl.fans) + 3);
+        if (this.log) this.say('trait', `ГОЛ УДАРОМ ЧЕРЕЗ СЕБЯ! ${this.pname(scorer)} — это шедевр, болельщики не верят своим глазам!`, side);
+        this._bike = false;
+      }
       let assist = null;
       if (kind !== 'pen' && kind !== 'fk') {
         // ассист — у автора передачи из этого розыгрыша; чем точнее его пас, тем чаще гол засчитывают как его передачу
