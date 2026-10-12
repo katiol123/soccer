@@ -180,10 +180,24 @@
   function tierOf(c) { const L = G.DATA && G.DATA.LEAGUES[c.league]; return L ? L.tier : 1; }
   function ownerCap(c) { return Math.round((c.own ? c.own.w : 10) * OWN_K[Math.min(2, tierOf(c) - 1)] * 10) / 10; }
   function debtLimit(c) { return EMB[Math.min(2, tierOf(c) - 1)]; }
-  function rollOwner(rng, min) { return { w: U.clamp(Math.round(1 + 19 * Math.pow(rng(), 1.3)), min || 1, 20) }; }
+  function rollOwner(rng, min) { return { w: U.clamp(Math.round(1 + 19 * Math.pow(rng(), 1.3)), min || 1, 20), amb: U.clamp(Math.round(1 + rng() * 19), 1, 20) }; }
+  /* Амбиции владельца: поднимают или опускают планку совета (в местах) */
+  function ownerShift(c) { const o = c.own || {}, a = o.amb == null ? 10 : o.amb; return Math.round((a - 10) / 4 * (o.w >= 8 ? 1 : 0.5)); }
+  /* Цель совета с учётом амбиций владельца */
+  function ownerGoal(c, exp) { const N = G.DATA && G.DATA.LEAGUES[c.league] ? G.DATA.LEAGUES[c.league].clubs.length : 20; return U.clamp(exp - ownerShift(c), 1, N); }
+  /* Деньги владельца на трансферы в начале сезона: только амбициозные и при деньгах */
+  function ownerFunds(c) { const o = c.own || {}; return Math.round(ownerCap(c) * 0.4 * U.clamp(((o.amb || 10) - 9) / 11, 0, 1) * (o.w >= 10 ? 1 : 0.4) * 10) / 10; }
+  function ownerInvest(st, c) {
+    const inj = ownerFunds(c);
+    if (inj <= 0 || embargo(c)) return 0;
+    book(c, 'owner', inj); c.fin.transferBudget = Math.round(((c.fin.transferBudget || 0) + inj) * 10) / 10;
+    return inj;
+  }
   function ownerLabel(c) {
-    const w = c.own ? c.own.w : 10;
-    return w >= 16 ? ['Миллиардер', 'покрывает почти любые убытки'] : w >= 11 ? ['Щедрый владелец', 'охотно гасит долги клуба'] : w >= 6 ? ['Осторожный владелец', 'помогает, но в разумных пределах'] : ['Владелец без денег', 'клуб должен жить по средствам'];
+    const w = c.own ? c.own.w : 10, a = c.own && c.own.amb != null ? c.own.amb : 10;
+    const L = w >= 16 ? ['Миллиардер', 'покрывает почти любые убытки'] : w >= 11 ? ['Щедрый владелец', 'охотно гасит долги клуба'] : w >= 6 ? ['Осторожный владелец', 'помогает, но в разумных пределах'] : ['Владелец без денег', 'клуб должен жить по средствам'];
+    const amb = a >= 15 ? 'амбициозен: даёт деньги на трансферы, но требует места выше' : a <= 6 ? 'без больших амбиций: цели скромнее' : 'амбиции умеренные';
+    return [L[0], `${L[1]}; ${amb}`];
   }
   /* Цель совета в Кубке Англии — стадия, до которой нужно дойти (индекс раунда; null — без цели) */
   const CUP_STAGES = ['1-й раунд', '3-й раунд', '4-й раунд', '5-й раунд', '1/4 финала', '1/2 финала', 'Финал', 'Победа'];
@@ -235,6 +249,7 @@
     const written = -c.fin.balance - L * 0.8;
     c.fin.balance = -L * 0.8;
     c.own = rollOwner(Math.random, 8);
+    c.fin.goal = ownerGoal(c, c.fin.target || 10);
     c.fin.ownLeft = ownerCap(c);
     c.fin.admin = (c.fin.admin || 0) + 1;
     c.pres = Math.max(1, pres(c) - 8);
@@ -246,7 +261,7 @@
       if (G.TR) { const m = G.TR.market(st); top.forEach(p => { if (!m.listed.includes(p.id)) m.listed.push(p.id); }); }
       if (st.board) st.board.conf = Math.max(0, st.board.conf - 20);
     } else top.forEach(p => { p.mood = Math.min(p.mood, 15); });
-    st.news.push({ r: st.round, text: `🚨 «${c.name}» уходит во внешнее управление: кредиторы списывают ${fmtM(written)} долга, клуб получает −12 очков${final ? ' в следующем сезоне' : ''}, зарплаты урезаны на 20%, ${top.map(p => p.name).join(' и ')} выставлены на продажу. Клуб купил новый владелец.` });
+    st.news.push({ r: st.round, text: `🚨 «${c.name}» уходит во внешнее управление: кредиторы списывают ${fmtM(written)} долга, клуб получает −12 очков${final ? ' в следующем сезоне' : ''}, зарплаты урезаны на 20%, ${top.map(p => p.name).join(' и ')} выставлены на продажу. Клуб купил новый владелец${c.own.amb >= 15 ? ' — амбициозный, с большими планами' : c.own.amb <= 6 ? ' — осторожный, без громких целей' : ''}.` });
   }
 
   /* Прогноз доходов на сезон (для бюджета зарплат) */
@@ -293,10 +308,13 @@
       if (c.fin.season.transfers == null) c.fin.season.transfers = 0;
       if (c.fin.season.owner == null) c.fin.season.owner = 0;
       if (!c.own) c.own = rollOwner(rng);
+      if (c.own.amb == null) c.own.amb = U.clamp(Math.round(1 + rng() * 19), 1, 20);
+      if (c.fin.goal == null) { c.fin.goal = ownerGoal(c, exp[c.id]); if (!(st.round > 0) && st.season === 1 && !st.started) ownerInvest(st, c); }
       if (c.pres == null) c.pres = presOf(c.str);
       if (c.fin.ownLeft == null) c.fin.ownLeft = ownerCap(c);
     });
-    if (st.userClub && !st.board) st.board = { conf: 60, target: exp[st.userClub] };
+    st.started = true;
+    if (st.userClub && !st.board) { const uc = st.clubs.find(c => c.id === st.userClub); st.board = { conf: 60, target: uc.fin.goal || exp[st.userClub] }; }
     if (st.board && st.board.cup === undefined) { const uc = st.clubs.find(c => c.id === st.userClub); st.board.cup = uc ? cupTarget(uc) : null; }
   }
 
@@ -318,6 +336,35 @@
   }
 
   /* Кубок: выручка делится между клубами (55/45, на «Уэмбли» — поровну); выезд к клубу выше классом собирает аншлаг */
+  /* ---------- болельщики (0..100) ----------
+     Настроение трибун: серия результатов, дерби, кубок, громкие покупки и продажи звёзд, цены на билеты.
+     Влияет на спрос, давление трибун и доверие совета. Провальная серия — пустеющая арена — ещё меньше поддержки */
+  function fans(c) { return c.fans == null ? 60 : c.fans; }
+  function fansLabel(v) { return v >= 85 ? ['Город влюблён в команду', '😍'] : v >= 65 ? ['Болельщики довольны', '😊'] : v >= 45 ? ['Болельщики спокойны', '😐'] : v >= 25 ? ['Болельщики недовольны', '😠'] : ['Фанаты протестуют', '🔥']; }
+  function fansAdd(st, c, d, why) {
+    if (!c || !d) return;
+    const before = fans(c);
+    c.fans = U.clamp(Math.round((before + d) * 10) / 10, 0, 100);
+    if (c.id !== st.userClub) return;
+    const cross = t => (before >= t) !== (c.fans >= t);
+    if (cross(25) && c.fans < 25) st.news.push({ r: st.round, text: `📢 Болельщики «${c.name}» недовольны${why ? ` (${why})` : ''}: трибуны пустеют, совет нервничает. Победа в дерби, громкий трансфер или дешёвые билеты помогут вернуть их.` });
+    else if (cross(12) && c.fans < 12) st.news.push({ r: st.round, text: `🔥 Протесты у стадиона «${c.name}»: фанаты требуют перемен. Доверие совета тает.` });
+    else if (cross(85) && c.fans >= 85) st.news.push({ r: st.round, text: `😍 Город влюблён в «${c.name}»: билеты сметают, стадион ревёт.` });
+  }
+  /* После матча: результат, дерби, кубок, цена билетов */
+  function fansAfterMatch(st, f) {
+    const H = st.clubs.find(c => c.id === f.h), A = st.clubs.find(c => c.id === f.a);
+    const w = G.LEAGUE.winner(f), diff = f.res.hs - f.res.as, derby = f.env && f.env.derby;
+    for (const [c, me] of [[H, 'h'], [A, 'a']]) {
+      const my = me === 'h' ? diff : -diff, won = f.res.hs !== f.res.as ? my > 0 : (f.cup || f.po) ? w === c.id : null;
+      let d = won === true ? 4 + (my >= 3 ? 2 : 0) : won === false ? -4 - (my <= -3 ? 2 : 0) : (me === 'h' ? -1 : 1);
+      if (derby) d *= 1.8;
+      if (f.cup) { const o = me === 'h' ? A : H; if (won === true && tierOf(o) < tierOf(c)) d += 4; if (won === false && tierOf(o) > tierOf(c)) d -= 5; }
+      if (me === 'h' && f.env && f.env.tp) d += f.env.tp <= 0.85 ? 1 : f.env.tp >= 1.45 ? -1.5 : 0;
+      fansAdd(st, c, d, won === false ? (derby ? 'проигрыш в дерби' : 'неудачная серия') : '');
+    }
+  }
+
   /* ---------- билеты: спрос и цена ----------
      Спрос на матч (может превышать 1 — аншлаг с запасом): место хозяев, престиж обоих клубов, важность матча, кубок, погода.
      Цена — множитель к базовой цене клуба. Дороже — больше денег за билет, но меньше зрителей и слабее поддержка */
@@ -331,6 +378,7 @@
       d = 0.8 + (N - pos) * 0.008 * 20 / N + (f.po ? 0.2 : 0);
     }
     d += (pres(H) - 45) / 250 + (pres(A) - 45) / 500 + imp * 0.12 + (U.rnd() - 0.5) * 0.06;
+    d += (fans(H) - 55) / 220 + (f.env && f.env.derby ? 0.15 : 0);   // настроение болельщиков и дерби
     const wx = f.env && f.env.weather;
     d -= wx === 'snow' ? 0.08 : (wx === 'rain' || wx === 'heavy') ? 0.03 : 0;
     return Math.max(0.35, d);
@@ -391,6 +439,7 @@
       if (c.fin.hist.length > 80) c.fin.hist.shift();
     }
     if (st.round % 4 === 3) ownerRound(st);
+    for (const c of st.clubs) if (c.fans != null) c.fans += (58 - c.fans) * 0.03;   // со временем страсти утихают
     sanctions(st, false);
     if (G.TR) G.TR.syncLoanWages(st);
     moodRound(st);
@@ -416,6 +465,7 @@
     // неделя без матча (пауза в лиге, плей-офф) — доверие не меняется
     if (!G.LEAGUE.weekFixtures(st).some(f => !f.po && !f.cup && (f.h === st.userClub || f.a === st.userClub))) return;
     let d = (b.target - pos) * 0.15 * 20 / table.length * 38 / G.LEAGUE.roundsTotal(st);
+    d += (fans(club) - 50) * 0.006;   // настроение трибун влияет на совет
     if (club.fin.balance < 0) d -= 1.5;
     if (wageBill(club) > club.fin.wageBudget) d -= 1;
     b.conf = U.clamp(Math.round((b.conf + d) * 10) / 10, 0, 100);
@@ -486,12 +536,19 @@
   /* Новый сезон: бюджеты по ожидаемому месту, новая цель правления */
   function seasonStart(st) {
     const exp = expectedPositions(st);
-    st.clubs.forEach(c => { c.fin.target = exp[c.id]; setBudget(st, c, exp[c.id]); c.fin.ownLeft = ownerCap(c); c.fin.transferBudget = c.fin.embargo ? 0 : Math.round(Math.max(0, c.fin.balance * 0.5)); });
+    const inv = {};
+    st.clubs.forEach(c => {
+      c.fin.target = exp[c.id]; c.fin.goal = ownerGoal(c, exp[c.id]);
+      setBudget(st, c, exp[c.id]); c.fin.ownLeft = ownerCap(c);
+      c.fin.transferBudget = c.fin.embargo ? 0 : Math.round(Math.max(0, c.fin.balance * 0.5));
+      inv[c.id] = ownerInvest(st, c);
+    });
     if (st.userClub) {
       const uc = st.clubs.find(c => c.id === st.userClub);
-      st.board.target = exp[st.userClub]; st.board.warned = false; st.board.cup = cupTarget(uc);
-      const cg = cupGoalText(st, st.board.cup);
-      st.news.push({ r: 0, text: `🏛 Задачи совета на сезон: ${st.board.target}-е место в лиге${cg ? `, в Кубке Англии — ${cg}` : ''}.` });
+      st.board.target = uc.fin.goal; st.board.warned = false; st.board.cup = cupTarget(uc);
+      const cg = cupGoalText(st, st.board.cup), sh = ownerShift(uc);
+      st.news.push({ r: 0, text: `🏛 Задачи совета на сезон: ${st.board.target}-е место в лиге${cg ? `, в Кубке Англии — ${cg}` : ''}.${sh > 0 ? ' Амбициозный владелец поднял планку.' : sh < 0 ? ' Владелец без больших амбиций — цели скромные.' : ''}` });
+      if (inv[uc.id] > 0) st.news.push({ r: 0, text: `💰 Владелец выделяет ${fmtM(inv[uc.id])} на трансферы — и ждёт результата.` });
     }
   }
 
@@ -569,5 +626,5 @@
   const fmtM = v => (v < 0 ? '−' : '') + '£' + Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1) + ' млн';
   const fmtW = v => '£' + Math.round(v) + ' тыс./нед';
 
-  G.FIN = { CAPACITY, EMB_WAGE, PRICES, matchDemand, elastic, fillAt, pricing, aiPrice, setPrice, pres, presOf, presLabel, status, appeal, prestigeSeason, cupTarget, cupStageName, cupGoalText, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
+  G.FIN = { CAPACITY, EMB_WAGE, fans, fansLabel, fansAdd, fansAfterMatch, ownerShift, ownerGoal, ownerFunds, PRICES, matchDemand, elastic, fillAt, pricing, aiPrice, setPrice, pres, presOf, presLabel, status, appeal, prestigeSeason, cupTarget, cupStageName, cupGoalText, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
 })(typeof window !== 'undefined' ? window : globalThis);

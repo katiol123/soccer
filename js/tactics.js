@@ -114,7 +114,9 @@
         // обещание игрового времени арендованному игроку (ИИ его соблюдает)
         if (p.loan && p.loan.to === club.id && G.TR && opts.honorLoans !== false) tv += G.TR.PROMISE[p.loan.promise].bonus;
         const fb = opts.noForm ? 0 : formBonus(p) * lineSuit(p.pos, ROLES[s.role].line);
-        pairs.push({ si, p, v: (roleRating(p, s.role) + tv + fb) * fitF });
+        // погода: ИИ учитывает, кому в такую погоду будет тяжело
+        const wa = opts.wx && G.ENGINE ? (1 - G.ENGINE.wxSens(p, opts.wx)) * 0.4 : 0;
+        pairs.push({ si, p, v: (roleRating(p, s.role) + tv + fb + wa) * fitF });
       });
     });
     pairs.sort((a, b) => b.v - a.v);

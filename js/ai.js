@@ -52,7 +52,7 @@
     // схема
     let best = null;
     for (const f of Object.keys(TAC.FORMATIONS)) {
-      const xi = TAC.bestXI(club, f, { ctx, exclude });
+      const xi = TAC.bestXI(club, f, { ctx, exclude, wx: opts && opts.env ? opts.env.weather : null });
       let score = TAC.lineupRating(club, f, xi.lineup);
       const pi = c.formations.indexOf(f);
       if (pi >= 0) score += (pi === 0 ? 0.9 : 0.6) * (1.25 - c.adapt);
@@ -120,6 +120,13 @@
     const map = TAC.playerMap(club);
     if (cupF && exclude && exclude.size) { const r = [...exclude].map(id => map[id]).filter(Boolean).sort((a, b) => TAC.overall(b) - TAC.overall(a)); notes.unshift(`Кубок: ротация — отдыхают ${r.slice(0, 3).map(p => p.name).join(', ')}${r.length > 3 ? ` и ещё ${r.length - 3}` : ''}.`); }
     else if (cupF && cupF.neutral) notes.unshift('Кубок: решающий матч — сильнейший состав.');
+    const wxNow = opts && opts.env && opts.env.weather;
+    if (wxNow && wxNow !== 'clear' && G.ENGINE) {
+      const W = G.ENGINE.WEATHER[wxNow], sens = p => G.ENGINE.wxSens(p, wxNow);
+      const out = club.players.filter(p => TAC.available(p) && !best.xi.lineup.includes(p.id) && sens(p) > 1.2 && TAC.overall(p) > myR - 0.3);
+      const ins = best.xi.lineup.map(id => map[id]).filter(p => p && sens(p) < 0.5);
+      if (out.length || ins.length) notes.push(`${W.i} ${W.n}: ${ins.length ? `ставка на ${ins.slice(0, 2).map(p => p.name).join(', ')}` : ''}${ins.length && out.length ? ', ' : ''}${out.length ? `${out[0].name} в такую погоду начнёт в запасе` : ''}.`);
+    }
     if (saved) notes.unshift(`Впереди ${opts.nextCup.name} Кубка Англии против «${opts.nextCup.opp.name}» — бережём ${saved.map(p => p.name).join(', ')}.`);
     const xiP = best.xi.lineup.map(id => map[id]).filter(Boolean);
     const bg = xiP.filter(p => ctx.strongOpp ? HAS(p, 'bigGame') : ctx.weakOpp ? HAS(p, 'flatTrack') : false);

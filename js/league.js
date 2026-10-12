@@ -144,7 +144,7 @@
     const x = st.round / Math.max(1, weeks(st) - 1), w = Math.exp(-Math.pow((x - 0.5) / 0.2, 2));
     const P = { clear: 0.55 - 0.3 * w, rain: 0.22 + 0.08 * w, wind: 0.12, heavy: 0.03 + 0.12 * w, snow: 0.08 * w };
     const H = club(st, f.h);
-    f.env = { weather: U.pickWeighted(Object.keys(P), k => P[k]), neutral: !!f.neutral, cap: f.neutral ? 90 : (H.cap || 30) };
+    f.env = { weather: U.pickWeighted(Object.keys(P), k => P[k]), neutral: !!f.neutral, cap: f.neutral ? 90 : (H.cap || 30), derby: isDerby(st, f.h, f.a), fans: Math.round(G.FIN.fans(H)) };
     if (f.neutral) { f.env.fill = Math.round(U.clamp(0.8 + U.rnd() * 0.2, 0.8, 1) * 1000) / 1000; f.env.tp = 1; return f.env; }
     // спрос, чувствительность к цене и выбор цены (ИИ — сам, пользователь — цена по умолчанию, можно изменить перед матчем)
     const imp = importance(st, f, H);
@@ -154,6 +154,13 @@
     const m = H.id === st.userClub ? (st.ticketM || 1) : G.FIN.aiPrice(st, f, imp);
     G.FIN.setPrice(st, f, m);
     return f.env;
+  }
+  /* Дерби: клубы одного города и исторические соперники */
+  const RIVALS = [['new', 'sun'], ['nfo', 'der'], ['ips', 'nor'], ['wba', 'wol'], ['avl', 'bir'], ['por', 'sou'], ['bla', 'bur'], ['lee', 'hud'], ['bri', 'car'], ['swa', 'car'], ['bol', 'wig'], ['bla', 'blp'], ['pne', 'blp'], ['lut', 'wat'], ['cov', 'lei'], ['bha', 'cry'], ['mid', 'sun'], ['ply', 'exe'], ['rea', 'oxf'], ['sto', 'pva'], ['bar', 'shw'], ['bar', 'rot'], ['don', 'rot'], ['mil', 'whu'], ['mid', 'new']];
+  function isDerby(st, a, b) {
+    const A = club(st, a), B = club(st, b);
+    if (!A || !B) return false;
+    return (A.city && A.city === B.city) || RIVALS.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
   }
   /* Важность матча для клуба (0..1): стадия сезона, борьба за титул/повышение/выживание, кубковый раунд, соперник */
   function importance(st, f, c) {
@@ -168,6 +175,7 @@
     if (Z.po && i < Z.po + 2 && i >= (Z.up || 0)) imp += 0.15 * (0.4 + x);
     const opp = club(st, f.h === c.id ? f.a : f.h);
     if (opp && G.FIN.pres(opp) >= 75) imp += 0.1;
+    if (isDerby(st, f.h, f.a)) imp += 0.25;
     return U.clamp(imp, 0, 1);
   }
 
@@ -294,6 +302,7 @@
     }
     const hc = club(st, fixture.h);
     G.FIN.matchday(st, fixture, standings(st, hc ? hc.league : st.lg));
+    G.FIN.fansAfterMatch(st, fixture);
     // двойная неделя: между кубковым и лиговым матчем — половина недельного восстановления
     if (fixture.cup) for (const id of [fixture.h, fixture.a]) {
       const c = club(st, id);
@@ -516,5 +525,5 @@
   async function exportSave(st) { await G.STORE.exportFile(serialize(st), `kombinaciya-${st.seasonName.replace('/', '-')}-tur${st.round + 1}`); }
   async function importSave(file) { const st = revive(await G.STORE.importFile(file)); if (!st) throw new Error('Файл не похож на сохранение игры'); save(st); return st; }
 
-  G.LEAGUE = { importance, prepOpts, matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
+  G.LEAGUE = { isDerby, importance, prepOpts, matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
 })(typeof window !== 'undefined' ? window : globalThis);

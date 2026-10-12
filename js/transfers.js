@@ -177,6 +177,10 @@
     const m = market(st);
     from.players = from.players.filter(x => x !== p); delete from._map;
     p.club = to.id; p.num = freeNumber(to); p.moved = windowState(st).id; p.joined = st.season; p.wage = wage; p.contract = years; p.dem = null; p.mood = 72; p.treq = false;
+    // болельщики: громкая покупка радует, продажа звезды — расстраивает
+    const ovr = TAC.overall(p);
+    if (ovr >= core(to) + 0.8 || fee >= 25) FIN().fansAdd(st, to, 5 + Math.min(5, fee / 15));
+    if (ovr >= core(from) + 0.8) FIN().fansAdd(st, from, -4 - Math.min(4, fee / 25), 'продажа звезды');
     to.players.push(p); delete to._map;
     const F = FIN();
     to.fin.balance -= fee; to.fin.season.transfers = (to.fin.season.transfers || 0) - fee;

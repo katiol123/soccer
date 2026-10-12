@@ -272,13 +272,13 @@
     G.LEAGUE.leagueIds(st).forEach(lid => G.LEAGUE.standings(st, lid).forEach((r, i, table) => {
       const c = club(st, r.id);
       if (c.id === st.userClub || st.sacks[c.id + '@' + st.season]) return;
-      const gap = ((i + 1) - (c.fin.target || 10)) * 20 / table.length;
+      const gap = ((i + 1) - (c.fin.goal || c.fin.target || 10)) * 20 / table.length;
       if (gap < 5) return;
       if (U.rnd() > 0.2 + (gap - 5) * 0.12) return;
       const old = c.coach;
       c.coach = genCoach(c);
       st.sacks[c.id + '@' + st.season] = st.round;
-      st.news.push({ r: st.round, text: `🔥 «${c.name}» увольняет ${old.name} (${i + 1}-е место при цели ${c.fin.target}-е). Новый главный тренер — ${c.coach.name} (${c.coach.nat}): ${c.coach.formations[0]}, «${TAC.PLANS[c.coach.plan].n}».` });
+      st.news.push({ r: st.round, text: `🔥 «${c.name}» увольняет ${old.name} (${i + 1}-е место при цели ${c.fin.goal || c.fin.target}-е). Новый главный тренер — ${c.coach.name} (${c.coach.nat}): ${c.coach.formations[0]}, «${TAC.PLANS[c.coach.plan].n}».` });
     }));
   }
 
@@ -308,7 +308,7 @@
     st.news.push({ r: st.round, text: `«${old.name}» назначает нового тренера: ${old.coach.name}.` });
     st.userClub = nc.id;
     st.userTactics = TAC.defaultTactics(nc);
-    st.board = { conf: 55, target: nc.fin.target || 10, cup: FIN().cupTarget(nc) };
+    st.board = { conf: 55, target: nc.fin.goal || nc.fin.target || 10, cup: FIN().cupTarget(nc) };
     st.lg = nc.league || st.lg;
     st.sacked = null;
     if (TR()) { const m = TR().market(st); m.listed = []; m.offers = []; m.short = []; }

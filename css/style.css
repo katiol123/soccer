@@ -821,3 +821,4 @@ table.league tr.po td.pos { box-shadow: inset 3px 0 0 #ffd23f; }
 .pb-opt { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,.2); color: var(--text); text-align: left; font-size: 12px; cursor: pointer; transition: all .15s; }
 .pb-opt b { font-size: 16px; } .pb-opt:hover { border-color: var(--accent); } .pb-opt.on { border-color: var(--accent); background: rgba(0,255,135,.12); }
 .price-default { margin-bottom: 14px; } .price-default .seg { margin-top: 6px; }
+.derby-tag { color: #ff6b3d; }

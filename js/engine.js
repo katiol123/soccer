@@ -37,9 +37,25 @@
   function crowdOf(env) {
     if (env && env.neutral) return 0;
     const cf = !env ? 0.85 : (env.fill == null ? 0.9 : env.fill);
-    return 1.3 * Math.pow(cf, 2.5) * U.clamp(0.6 + ((env && env.cap) || 30) / 100, 0.6, 1.25);
+    const fk = env && env.fans != null ? 0.75 + env.fans / 220 : 1;   // настроение болельщиков: 0 → ×0.75, 100 → ×1.2
+    return 1.55 * Math.pow(cf, 2.5) * U.clamp(0.6 + ((env && env.cap) || 30) / 100, 0.6, 1.25) * fk;
   }
   function crowdLabel(c) { return c >= 1.05 ? 'ревущий аншлаг' : c >= 0.75 ? 'сильное' : c >= 0.45 ? 'заметное' : c > 0.1 ? 'слабое' : 'нет'; }
+  /* Чувствительность игрока к погоде: техничным тяжелее, силовым и выносливым легче,
+     а на вязком поле жёсткий отбор, игра головой и пушечный удар даже в плюсе. Ветер мешает навесам и дальним ударам */
+  const WX_TECH = ['flair', 'dribbler', 'finesse', 'holder', 'tempo', 'vision', 'distributor'];
+  const WX_PHYS = ['iron', 'engine', 'presser', 'wingMotor', 'hard', 'aerial', 'powerShot'];
+  const WX_MUD = ['hard', 'aerial', 'powerShot'];
+  const WX_WIND = ['crosser', 'longShots', 'aerial', 'setpiece'];
+  function wxSens(p, weather) {
+    if (!weather || weather === 'clear') return 1;
+    const tr = p.tr || [], has = l => tr.some(t => l.includes(t));
+    if (weather === 'wind') return has(WX_WIND) ? 1.8 : 1;
+    if (has(WX_TECH)) return 1.7;
+    if ((weather === 'heavy' || weather === 'rain') && has(WX_MUD)) return -0.4;
+    if (has(WX_PHYS) || p.a.sta >= 16) return 0.4;
+    return 1;
+  }
   /* Домашнее преимущество: чем полнее и больше арена, тем сильнее поддержка (нейтральное поле — 0).
      Делится поровну: хозяева атакуют сильнее, гости — слабее, общее число голов почти не меняется */
   function homeK(env) {
@@ -212,7 +228,7 @@
       }
       if (p.m && p.m.shift) v += p.m.shift;
       if (p.m && p.m.formB) v += p.m.formB;
-      if (this.wx.attr[k]) v += this.wx.attr[k];
+      if (this.wx.attr[k]) { if (p.m && p.m.wxs == null) p.m.wxs = wxSens(p, this.env && this.env.weather); v += this.wx.attr[k] * (p.m ? p.m.wxs : 1); }
       if (p.m && (k === 'tac' || k === 'pos')) v += this.effort(p);
       // трибуны давят на гостей: хладнокровие падает; хозяев поддерживают
       if (p.m && k === 'com') v += p.m.side === 'away' ? -this.crowd * 3.2 : this.crowd * 0.8 - this.boo;
@@ -972,5 +988,5 @@
     }[c] || 'КОМБО!';
   }
 
-  G.ENGINE = { Match, CFG, PHASE, R, ZONE_TXT, WEATHER, homeK, crowdOf, crowdLabel };
+  G.ENGINE = { Match, CFG, PHASE, R, ZONE_TXT, WEATHER, homeK, crowdOf, crowdLabel, wxSens };
 })(typeof window !== 'undefined' ? window : globalThis);
