@@ -387,9 +387,11 @@
             me.shotCharge -= lost;
             opp.counterCharge = Math.min(70, opp.counterCharge + cc);
             passer.m.perf -= 0.07;   // ошибка снижает оценку
+            const icp = this.pickPlayer(OTHER(side), 'pos', dph);   // перехватил конкретный защитник
+            if (icp) icp.m.perf += 0.04;
             this.chainMark(side, passer, 'miss');
             fx.push({ k: 'charge', t: 1, text: `Неточный пас: −${Math.round(lost)} к моменту` });
-            if (this.log && U.rnd() < 0.5) this.say('info', `${this.pname(passer)} ошибается с передачей — соперник готовит ответный выпад.`, side);
+            if (this.log && U.rnd() < 0.5) this.say('tackle', icp ? `${this.pname(icp)} перехватывает передачу ${this.pname(passer)} — соперник готовит ответный выпад.` : `${this.pname(passer)} ошибается с передачей — соперник готовит ответный выпад.`, icp ? OTHER(side) : side);
           } else {
             const v = this.passCharge(passer, c[1]);
             me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
@@ -631,26 +633,31 @@
        Неудача — минус к оценке, половина темпа, заряд контратаки соперника, у штрафной — минус к шкале */
     solo(side, p, attr, oppAttr, dph, rp, n, fx) {
       const me = this.t[side], opp = this.t[OTHER(side)];
-      const diff = this.pa(p, attr) - this.val(OTHER(side), oppAttr, dph);
+      // конкретный защитник, встретивший атакующего: по роли в этой зоне и его Отбору/Скорости
+      const def = this.pickPlayer(OTHER(side), oppAttr, dph);
+      const dv = def ? this.pa(def, oppAttr) * this.fatF(def) : this.val(OTHER(side), oppAttr, dph);
+      const diff = this.pa(p, attr) * this.fatF(p) - dv;
       const tr = attr === 'dri' ? (TRAITS.has(p, 'dribbler') ? 0.05 : 0) + (TRAITS.has(p, 'flair') ? 0.03 : 0) : (TRAITS.has(p, 'runner') ? 0.03 : 0);
-      const missP = U.clamp(0.2 - diff * 0.025 - tr + (1 - this.fatF(p)) * 0.6, 0.05, 0.5);
+      const missP = U.clamp(0.2 - diff * 0.025 - tr + (TRAITS.has(def, 'hard') || TRAITS.has(def, 'clean') ? 0.03 : 0), 0.05, 0.5);
       const what = attr === 'dri' ? ['обыгрыш', 'Потеря при обводке', 'теряет мяч в обводке', 'обыгрывает защитника'] : ['прорыв', 'Упёрся в защитника', 'упирается в защитника', 'прорывается за спину защитникам'];
       if (U.rnd() < missP) {
         p.m.perf -= 0.05;
+        if (def) def.m.perf += 0.06;   // защитник выиграл дуэль
         this.chainMark(side, p, 'miss');
         opp.counterCharge = Math.min(70, opp.counterCharge + 4 + U.rnd() * 5);
         if (rp >= 3) { const lost = Math.min(me.shotCharge, 5 + U.rnd() * 5); me.shotCharge -= lost; }
         fx.push({ k: 'charge', t: attr === 'dri' ? 2 : 3, text: what[1] });
-        if (this.log && rp >= 2 && U.rnd() < 0.35) this.say('info', `${this.pname(p)} ${what[2]} — соперник может ответить.`, side);
+        if (this.log && rp >= 2 && U.rnd() < 0.35) this.say('tackle', def ? `${this.pname(def)} ${attr === 'dri' ? 'отбирает мяч у' : 'догоняет и останавливает'} ${this.pname(p)} — соперник может ответить.` : `${this.pname(p)} ${what[2]} — соперник может ответить.`, OTHER(side));
         return false;
       }
       p.m.perf += 0.04;
+      if (def) def.m.perf -= 0.015;   // защитника обыграли (обводка — не всегда вина защитника)
       if (rp >= 3) {
         const v = U.clamp((2.5 + diff * 0.8) * Math.min(1.5, 0.7 + n * 0.15) * this.fatF(p), 2, 12);
         me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
         this.chainMark(side, p, 'charged');
         fx.push({ k: 'charge', t: attr === 'dri' ? 2 : 3, text: `+${Math.round(v)} ${what[0]}` });
-        if (this.log && v >= 6 && U.rnd() < 0.4) this.say('advance', `${this.pname(p)} ${what[3]}!`, side);
+        if (this.log && v >= 6 && U.rnd() < 0.4) this.say('advance', def ? `${this.pname(p)} ${attr === 'dri' ? 'обыгрывает' : 'убегает от'} ${this.pname(def)}!` : `${this.pname(p)} ${what[3]}!`, side);
       }
       return true;
     }
