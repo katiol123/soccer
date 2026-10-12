@@ -292,10 +292,12 @@
       const f = this.fatF(gk);
       return { ref: this.pa(gk, 'ref') * f, pos: this.pa(gk, 'pos') * f, pas: this.pa(gk, 'pas') * f, com: this.pa(gk, 'com') * f, p: gk };
     }
-    pickPlayer(side, attr, phase, exclude) {
+    /* Умение занять позицию: ±3% к шансу оказаться в нужном месте за каждую единицу Позиции выше/ниже 10 */
+    posK(p) { return U.clamp(1 + (p.a.pos - 10) * 0.03, 0.75, 1.3); }
+    pickPlayer(side, attr, phase, exclude, byPos) {
       const list = this.t[side].onPitch.filter(x => x.p && x.slot.role !== 'GK' && x.p !== exclude);
       if (!list.length) return null;
-      const it = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[phase] + 0.02, 1.5) * Math.pow(this.pa(x.p, attr) * this.fatF(x.p), 1.6) * (phase === 'front' ? this.pm(x.p, 'attackW') : 1));
+      const it = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[phase] + 0.02, 1.5) * Math.pow(this.pa(x.p, attr) * this.fatF(x.p), 1.6) * (phase === 'front' ? this.pm(x.p, 'attackW') : 1) * (byPos ? this.posK(x.p) : 1));
       return it.p;
     }
     plan(side) { return this.t[side].tac.plan; }
@@ -604,7 +606,7 @@
         me.pressure += press;
         if (me.pressure >= 100) {
           me.st.wins++;
-          const p = this.pickPlayer(side, 'tac', ph);
+          const p = this.pickPlayer(side, 'tac', ph, null, true);
           if (p) p.m.perf += 0.1 + Math.max(0, p.a.tac - 11) * 0.02;   // мастер отбора получает за отбор больше
           fx.push({ k: 'event', text: 'ОТБОР!' });
           const holders = this.withTrait(aSide, 'holder');
@@ -634,7 +636,7 @@
     solo(side, p, attr, oppAttr, dph, rp, n, fx) {
       const me = this.t[side], opp = this.t[OTHER(side)];
       // конкретный защитник, встретивший атакующего: по роли в этой зоне и его Отбору/Скорости
-      const def = this.pickPlayer(OTHER(side), oppAttr, dph);
+      const def = this.pickPlayer(OTHER(side), oppAttr, dph, null, true);
       const dv = def ? this.pa(def, oppAttr) * this.fatF(def) : this.val(OTHER(side), oppAttr, dph);
       const diff = this.pa(p, attr) * this.fatF(p) - dv;
       const tr = attr === 'dri' ? (TRAITS.has(p, 'dribbler') ? 0.05 : 0) + (TRAITS.has(p, 'flair') ? 0.03 : 0) : (TRAITS.has(p, 'runner') ? 0.03 : 0);
@@ -810,7 +812,8 @@
       const attr = kind === 'header' ? 'pos' : 'sho';
       const ph = kind === 'long' || kind === 'vlong' ? 'mid' : 'front';
       const kw = { box: 'boxW', long: 'longW', vlong: 'longW', header: 'headerW' }[kind];
-      return U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[ph] + 0.08, 1.5) * Math.pow(this.pa(x.p, attr), 1.5) * this.pm(x.p, 'shotW') * this.pm(x.p, kw)).p;
+      // умение открыться: в штрафной адресатом передачи чуть чаще становится тот, у кого выше Позиция
+      return U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[ph] + 0.08, 1.5) * Math.pow(this.pa(x.p, attr), 1.5) * this.pm(x.p, 'shotW') * this.pm(x.p, kw) * (kind === 'box' ? this.posK(x.p) : 1)).p;
     }
 
     shoot(side, kind, n, step, fx, ctx, forced) {
