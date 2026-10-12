@@ -710,13 +710,14 @@
         head.innerHTML = '';
         head.append(el('button.icon-btn', { text: '‹', onclick: () => { r = Math.max(0, r - 1); render(); } }), el('h3', null, [LEAGUE.weekLabel(st, lid, w), el('small.muted', { text: ` · неделя ${w + 1}` })]), el('button.icon-btn', { text: '›', onclick: () => { r = Math.min(wk.length - 1, r + 1); render(); } }));
         list.innerHTML = '';
+        const tbl = LEAGUE.standings(st, lid), place = id => tbl.findIndex(r => r.id === id) + 1;
         fx[w].forEach(f => {
           const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a);
           const mine = st.userClub && (f.h === st.userClub || f.a === st.userClub);
           const row = el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''), { onclick: () => f.res && this.report(f) }, [
-            el('div.fx-t.h', null, [el('span', { text: h.name }), UI.crest(h, 24)]),
+            el('div.fx-t.h', null, [el('span', null, [h.name, el('small.fx-pos', { text: ` (${place(h.id)})` })]), UI.crest(h, 24)]),
             el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –' }),
-            el('div.fx-t.a', null, [UI.crest(a, 24), el('span', { text: a.name })])
+            el('div.fx-t.a', null, [UI.crest(a, 24), el('span', null, [a.name, el('small.fx-pos', { text: ` (${place(a.id)})` })])])
           ]);
           list.appendChild(row);
         });
