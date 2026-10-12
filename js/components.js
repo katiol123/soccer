@@ -21,6 +21,8 @@
   };
 
   /* Модальное окно. buttons: [{text, cls, value, onClick}] — возвращает {el, close, result: Promise} */
+  /* Имя игрока-ссылка: клик открывает карточку игрока */
+  UI.pname = (p, txt) => el('span.player-link', { 'data-player': p.id, title: 'Карточка игрока', text: txt || p.name });
   /* Название клуба-ссылка: клик открывает состав клуба */
   UI.cname = (c, txt) => el('span.club-link', { 'data-club': c.id, title: 'Состав «' + c.name + '»', text: txt || c.name });
 

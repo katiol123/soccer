@@ -515,7 +515,7 @@
     for (const ts of [H, A]) {
       const col = el('div.ft-col', null, [el('h4', { text: ts.club.name })]);
       ts.club.players.filter(p => p.m && p.m.played).sort((a, b) => (b.m.rating || 0) - (a.m.rating || 0)).forEach(p => {
-        col.appendChild(el('div.ft-r', null, [el('span', { text: p.name }), el('b', { text: (p.m.rating || 0).toFixed(1), style: { color: p.m.rating >= 7.5 ? '#00ff87' : p.m.rating >= 6.5 ? '#e7d64a' : '#ff8a3d' } })]));
+        col.appendChild(el('div.ft-r', null, [UI.pname(p), el('b', { text: (p.m.rating || 0).toFixed(1), style: { color: p.m.rating >= 7.5 ? '#00ff87' : p.m.rating >= 6.5 ? '#e7d64a' : '#ff8a3d' } })]));
       });
       cols.appendChild(col);
     }

@@ -24,6 +24,18 @@
       };
       try { SFX.on = localStorage.getItem('m3-sound') !== 'off'; } catch (e) { /* */ }
       document.addEventListener('pointerdown', () => SFX.ensure(), { once: true });
+      // клик по имени игрока — его карточка (клуб или свободный агент)
+      document.addEventListener('click', e => {
+        const t = e.target.closest && e.target.closest('[data-player]');
+        if (!t || !this.st) return;
+        const id = t.dataset.player, st = this.st;
+        let club = null, p = null;
+        for (const c of st.clubs) { p = c.players.find(x => x.id === id); if (p) { club = c; break; } }
+        if (!p) { p = (st.fa || []).find(x => x.id === id); club = p ? { id: '_fa', name: 'Свободный агент', c1: '#444', c2: '#888', short: 'FA' } : null; }
+        if (!p) return;
+        e.preventDefault(); e.stopPropagation();
+        UI.playerModal(p, club);
+      }, true);
       // клик по названию клуба — его состав (вкладка «Состав и тактика» / «Клубы»)
       document.addEventListener('click', e => {
         const t = e.target.closest && e.target.closest('[data-club]');
@@ -172,7 +184,7 @@
           ]),
           el('div.cd-coach', null, [el('small', { text: 'Нынешний тренер (уступит вам место)' }), el('b', { text: `${c.coach.name} (${c.coach.nat})` }), el('p', { text: c.coach.motto }),
             el('div.cd-tags', null, [el('span', { text: c.coach.formations.join(' / ') }), el('span', { text: TAC.PLANS[c.coach.plan].icon + ' ' + TAC.PLANS[c.coach.plan].n })])]),
-          el('div.cd-players', null, [el('small', { text: 'Лидеры состава' })].concat(top.map(p => el('div.cd-p', null, [el('span.bp-pos', { text: UI.posShort(p.pos) }), el('span', null, [p.name + (p.star ? ' ★ ' : ' '), UI.traitIcons(p)]), el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })])))),
+          el('div.cd-players', null, [el('small', { text: 'Лидеры состава' })].concat(top.map(p => el('div.cd-p', { onclick: () => UI.playerModal(p, c), title: 'Карточка игрока' }, [el('span.bp-pos', { text: UI.posShort(p.pos) }), el('span', null, [p.name + (p.star ? ' ★ ' : ' '), UI.traitIcons(p)]), el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })])))),
           el('button.btn.primary.big', { onclick: async () => { if (!(await this.confirmOverwrite())) return; this.startGame('manager', c.id, world, opts.turns); } }, [el('span', { text: `Возглавить «${c.name}»` })])
         );
       };
@@ -332,7 +344,7 @@
         const sc = LEAGUE.topScorers(st, 5, this.vlg());
         if (sc.length) {
           const box = el('div.card', null, [el('h3', { text: 'Бомбардиры' })]);
-          sc.forEach((x, i) => box.appendChild(el('div.mini-row', null, [el('span.pos', { text: i + 1 }), UI.crest(x.c, 18), el('span.nm', { text: x.p.name }), el('b', { text: x.p.st.goals })])));
+          sc.forEach((x, i) => box.appendChild(el('div.mini-row', { onclick: () => UI.playerModal(x.p, x.c) }, [el('span.pos', { text: i + 1 }), UI.crest(x.c, 18), el('span.nm', { text: x.p.name }), el('b', { text: x.p.st.goals })])));
           side.appendChild(box);
         }
       }
@@ -478,6 +490,14 @@
       if (left.length) foot.appendChild(el('button.btn.small', { text: `⚡ Сыграть кубок (${left.length})`, onclick: async () => { await this.simList(left, 'Кубок Англии...'); LEAGUE.save(st); this.hub(); } }));
       box.appendChild(foot);
       return box;
+    },
+
+    /* Имя игрока по id — ссылкой, если игрок ещё в игре (иначе просто текст) */
+    pnameById(id, name) {
+      const st = this.st;
+      for (const c of st.clubs) { const p = c.players.find(x => x.id === id); if (p) return UI.pname(p); }
+      const p = (st.fa || []).find(x => x.id === id);
+      return p ? UI.pname(p) : name;
     },
 
     /* ---------- Графики: динамика клубов по неделям ---------- */
@@ -830,12 +850,12 @@
       const oppTr = oppTac.lineup.map(id => map0[id]).filter(p => p && p.tr && p.tr.length);
       if (oppTr.length) {
         const tbox = el('div.pm-notes', null, [el('small', { text: 'Скаут: особенности игроков соперника' })]);
-        oppTr.slice(0, 6).forEach(p => p.tr.forEach(id => { const t = G.TRAITS.LIST[id]; tbox.appendChild(el('div', { title: t.d }, [`${t.i} ${p.name} — ${t.n}`])); }));
+        oppTr.slice(0, 6).forEach(p => p.tr.forEach(id => { const t = G.TRAITS.LIST[id]; tbox.appendChild(el('div', { title: t.d }, [`${t.i} `, UI.pname(p), ` — ${t.n}`])); }));
         theirs.appendChild(tbox);
       }
       const map = TAC.playerMap(opp);
       const ol = el('div.pm-xi');
-      TAC.FORMATIONS[oppTac.formation].forEach((s, i) => { const p = map[oppTac.lineup[i]]; if (p) ol.appendChild(el('div.pm-p', null, [el('span.lu-pos', { text: s.label }), el('span', null, [p.name + ' ', UI.formBadge(p), ' ', UI.traitIcons(p)]), el('b', { text: TAC.roleRating(p, s.role).toFixed(1), style: { color: U.attrColor(TAC.roleRating(p, s.role)) } })])); });
+      TAC.FORMATIONS[oppTac.formation].forEach((s, i) => { const p = map[oppTac.lineup[i]]; if (p) ol.appendChild(el('div.pm-p', null, [el('span.lu-pos', { text: s.label }), el('span', null, [UI.pname(p), ' ', UI.formBadge(p), ' ', UI.traitIcons(p)]), el('b', { text: TAC.roleRating(p, s.role).toFixed(1), style: { color: U.attrColor(TAC.roleRating(p, s.role)) } })])); });
       theirs.appendChild(ol);
       body.append(mine, theirs);
       root.appendChild(body);
@@ -867,7 +887,7 @@
       const gl = el('div.ft-goals');
       r.goals.forEach(g => gl.appendChild(el('div.ft-g.' + g.side, { text: `⚽ ${g.min} ${g.scorer}${g.kind === 'pen' ? ' (пен.)' : ''}${g.assist ? ' (' + g.assist + ')' : ''}` })));
       content.appendChild(gl);
-      if (r.motm) content.appendChild(el('div.ft-motm', null, [el('small', { text: 'Игрок матча' }), el('b', { text: `${r.motm} — ${r.motmR}` })]));
+      if (r.motm) { const mp = h.players.concat(a.players).find(x => x.name === r.motm); content.appendChild(el('div.ft-motm', null, [el('small', { text: 'Игрок матча' }), el('b', null, [mp ? UI.pname(mp) : r.motm, ` — ${r.motmR}`])])); }
       if (r.att) content.appendChild(el('div.muted', { text: `🏟 ${f.neutral ? '«Уэмбли»' : h.stadium}: ${r.att.toLocaleString('ru')} зрителей${f.env ? ` · ${G.ENGINE.WEATHER[f.env.weather].i} ${G.ENGINE.WEATHER[f.env.weather].n}` : ''}`, style: { textAlign: 'center' } }));
       const s = r.stats;
       const tbl = el('div.stats');
@@ -936,7 +956,7 @@
         el('h1', { text: 'Чемпион Англии' }),
         el('div.se-champ', null, [UI.crest(champ, 120), el('b', { text: champ.name }), el('small', { text: `${ttop[0].pts} очков · ${champ.coach.name}` })]),
         userTxt ? el('div.se-user', { text: userTxt }) : null,
-        sc ? el('div.se-user.small', { text: `Лучший бомбардир: ${sc.p.name} (${sc.c.name}) — ${sc.p.st.goals}` }) : null,
+        sc ? el('div.se-user.small', null, ['Лучший бомбардир: ', UI.pname(sc.p), ` (${sc.c.name}) — ${sc.p.st.goals}`]) : null,
         other.children.length ? other : null,
         el('div.se-btns', null, [
           el('button.btn.ghost', { text: 'Итоговые таблицы', onclick: () => { const b = el('div'); let cur = uc ? uc.league : top; const draw = () => { b.innerHTML = ''; const sg = this.leagueSeg(cur, l => { cur = l; draw(); }); if (sg) b.appendChild(sg); this.tableEl(b, cur); this.playoffEl(b, cur); }; draw(); UI.modal({ title: 'Итоговые таблицы ' + st.seasonName, content: b, wide: true }); } }),
@@ -1087,7 +1107,7 @@
       box.appendChild(el('div.fm-row', null, [el('span', { text: 'Бюджет' }), el('b', { text: G.FIN.fmtM(c.fin.transferBudget || 0) })]));
       if (m.offers.length) box.appendChild(el('div.fm-warn', { text: `📨 Входящих предложений: ${m.offers.length}` }));
       const req = c.players.filter(p => p.treq && !m.listed.includes(p.id));
-      if (req.length) box.appendChild(el('div.fm-warn', { text: `✉ Просят о трансфере: ${req.map(p => p.name).join(', ')}` }));
+      if (req.length) box.appendChild(el('div.fm-warn', null, ['✉ Просят о трансфере: '].concat(req.flatMap((p, i) => i ? [', ', UI.pname(p)] : [UI.pname(p)]))));
       return box;
     },
 
@@ -1189,7 +1209,7 @@
         const p = f.p;
         const row = el('div.offer', null, [
           UI.crest(buyer, 34),
-          el('div.offer-t', null, [el('b', { text: `«${buyer.name}» → ${p.name}` }), el('small', { text: `${UI.posName(p.pos)}, ${p.age} · рейтинг ${TAC.overall(p).toFixed(1)} · стоимость ${G.FIN.fmtM(G.FIN.value(p))} · действует до ${o.expires + 1}-й недели` })]),
+          el('div.offer-t', null, [el('b', null, [`«${buyer.name}» → `, UI.pname(p)]), el('small', { text: `${UI.posName(p.pos)}, ${p.age} · рейтинг ${TAC.overall(p).toFixed(1)} · стоимость ${G.FIN.fmtM(G.FIN.value(p))} · действует до ${o.expires + 1}-й недели` })]),
           el('div.offer-fee', { text: G.FIN.fmtM(o.fee) }),
           el('div.offer-act', null, [
             el('button.btn.small.primary', { text: 'Принять', onclick: () => this.answer(o.id, 'accept') }),
@@ -1237,12 +1257,12 @@
       if (!m.history.length) { card.appendChild(el('div.muted', { text: 'Сделок пока не было.' })); return; }
       m.history.slice().reverse().forEach(h => {
         const a = h.from ? LEAGUE.club(st, h.from) : null, b = h.to ? LEAGUE.club(st, h.to) : null;
-        if (!a && b) { card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, ['свободный агент → ', UI.crest(b, 18), ' ', UI.cname(b, b.short)]), el('b.loan-tag', { text: 'бесплатно' })])); return; }
-        if (!a) return;
-        if (!b) { card.appendChild(el('div.hist-row', null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ' ', UI.cname(a, a.short), ' → свободный агент']), el('b', { text: '—' })])); return; }
         const mine = h.to === st.userClub ? 'in' : h.from === st.userClub ? 'out' : '';
-        if (h.loan) { card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ' ', UI.cname(a, a.short), ' → ', UI.crest(b, 18), ' ', UI.cname(b, b.short)]), el('b.loan-tag', { text: 'аренда' + (h.fee ? ' · ' + G.FIN.fmtM(h.fee) : '') })])); return; }
-        card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ' ', UI.cname(a, a.short), ' → ', UI.crest(b, 18), ' ', UI.cname(b, b.short)]), el('b', { text: G.FIN.fmtM(h.fee) })]));
+        if (!a && b) { card.appendChild(el('div.hist-row' + (mine ? '.' + mine : ''), null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', null, [this.pnameById(h.pid, h.name)]), el('span', null, ['свободный агент → ', UI.crest(b, 18), ' ', UI.cname(b, b.short)]), el('b.loan-tag', { text: 'бесплатно' })])); return; }
+        if (!a) return;
+        if (!b) { card.appendChild(el('div.hist-row', null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', null, [this.pnameById(h.pid, h.name)]), el('span', null, [UI.crest(a, 18), ' ', UI.cname(a, a.short), ' → свободный агент']), el('b', { text: '—' })])); return; }
+        if (h.loan) { card.appendChild(el('div.hist-row' + (mine ? '.' + mine : ''), null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', null, [this.pnameById(h.pid, h.name)]), el('span', null, [UI.crest(a, 18), ' ', UI.cname(a, a.short), ' → ', UI.crest(b, 18), ' ', UI.cname(b, b.short)]), el('b.loan-tag', { text: 'аренда' + (h.fee ? ' · ' + G.FIN.fmtM(h.fee) : '') })])); return; }
+        card.appendChild(el('div.hist-row' + (mine ? '.' + mine : ''), null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', null, [this.pnameById(h.pid, h.name)]), el('span', null, [UI.crest(a, 18), ' ', UI.cname(a, a.short), ' → ', UI.crest(b, 18), ' ', UI.cname(b, b.short)]), el('b', { text: G.FIN.fmtM(h.fee) })]));
       });
     },
 
@@ -1280,7 +1300,7 @@
       [1, 2, 3, 4].forEach(y => yrs.appendChild(el('button' + (y === state.years ? '.on' : ''), { text: y + ' ' + U.plural(y, 'год', 'года', 'лет'), onclick: (e) => { state.years = y; U.$$('button', yrs).forEach(b => b.classList.remove('on')); e.target.classList.add('on'); } })));
       upd();
       const content = el('div.renew', null, [
-        el('div.pc-head', null, [el('div', null, [el('div.pc-name', { text: p.name }), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · свободный агент ${d.idle} нед.` })])]),
+        el('div.pc-head', null, [el('div', null, [el('div.pc-name', null, [UI.pname(p)]), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · свободный агент ${d.idle} нед.` })])]),
         el('div.agent', null, [el('div', { text: `💬 Агент: «Он просит ${G.FIN.fmtW(d.wage)}, контракт на ${d.years[0]}–${d.years[1]} ${U.plural(d.years[1], 'год', 'года', 'лет')}».` })]),
         el('div.renew-row', null, [el('span', { text: 'Зарплата' }), slider, wv]), el('div.renew-row', null, [el('span', { text: 'Срок' }), yrs]), msg,
         el('div.renew-btns', null, [el('button.btn.primary', { text: 'Подписать контракт', onclick: () => { const r = CAR.signFree(st, st.userClub, pid, state.wage, state.years); if (r.ok) { md.close(); UI.toast(r.msg); st.news.push({ r: st.round, text: '✍ ' + r.msg }); LEAGUE.save(st); this.hub('transfers'); } else msg.textContent = r.msg; } })])
@@ -1365,7 +1385,7 @@
       [[null, 'Нет'], [1, `${G.FIN.fmtM(v)}`], [1.3, `${G.FIN.fmtM(Math.round(v * 13) / 10)}`]].forEach(([k, n]) => opt.appendChild(el('button' + (k === null ? '.on' : ''), { text: n, onclick: (e) => { terms.option = k ? Math.round(v * k * 10) / 10 : null; U.$$('button', opt).forEach(b => b.classList.remove('on')); e.target.classList.add('on'); redrawList(); } })));
       const slider = el('input', { type: 'range', min: 0, max: 100, step: 5, value: 50, oninput: (e) => { terms.share = +e.target.value / 100; shareV.textContent = `${e.target.value}% (${Math.round(p.wage * terms.share)} тыс./нед)`; redrawList(); } });
       shareV.textContent = `50% (${Math.round(p.wage * 0.5)} тыс./нед)`;
-      content.append(el('div.pc-head', null, [el('div', null, [el('div.pc-name', { text: p.name }), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · зарплата ${G.FIN.fmtW(p.wage)}` })])]),
+      content.append(el('div.pc-head', null, [el('div', null, [el('div.pc-name', null, [UI.pname(p)]), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · зарплата ${G.FIN.fmtW(p.wage)}` })])]),
         el('div.muted.small-note', { text: 'Игровая практика в аренде (8+ матчей, а лучше 15+) ускоряет развитие в межсезонье. В конце сезона игрок вернётся — если арендатор не исполнит опцию выкупа.' }),
         el('div.renew-row', null, [el('span', { text: 'Гарантии' }), promise]),
         el('div.renew-row', null, [el('span', { text: 'Платят они' }), slider, shareV]),
@@ -1395,7 +1415,7 @@
       redraw();
       const msg = el('div.renew-hint');
       let haggled = false;
-      content.append(el('div.pc-head', null, [UI.crest(owner, 40), el('div', null, [el('div.pc-name', { text: p.name }), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · «${owner.name}»` })])]),
+      content.append(el('div.pc-head', null, [UI.crest(owner, 40), el('div', null, [el('div.pc-name', null, [UI.pname(p)]), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · «${owner.name}»` })])]),
         el('div.agent', null, [el('div', { text: `💬 «${owner.name}»: ${terms.promise === 'start' ? '«Он должен играть — иначе заберём его зимой».' : terms.promise === 'rot' ? '«Ждём, что он будет получать минуты».' : '«Готовы отпустить без условий».'}` })]),
         info, msg,
         el('div.renew-btns', null, [
@@ -1415,7 +1435,7 @@
       const content = el('div.renew');
       let md;
       const v = G.FIN.value(p);
-      const head = el('div.pc-head', null, [UI.crest(seller, 44), el('div', null, [el('div.pc-name', { text: p.name }), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · «${seller.name}» · ${TR.aiListed(seller, p) ? 'клуб готов продать' : TR.STATUS_TXT[TR.status(seller, p)]}` })])]);
+      const head = el('div.pc-head', null, [UI.crest(seller, 44), el('div', null, [el('div.pc-name', null, [UI.pname(p)]), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · «${seller.name}» · ${TR.aiListed(seller, p) ? 'клуб готов продать' : TR.STATUS_TXT[TR.status(seller, p)]}` })])]);
       const stepClub = () => {
         content.innerHTML = '';
         content.appendChild(head);
@@ -1617,7 +1637,7 @@
       const st = this.st;
       const d = G.FIN.demand(st, p, club);
       if (d.refuse) {
-        UI.modal({ title: 'Переговоры о контракте', content: el('div.renew', null, [el('div.pc-name', { text: p.name }), el('p', { text: d.refuse }), el('div.agent', null, G.FIN.agentNotes(p, club).map(t => el('div', { text: '💬 ' + t })))]), buttons: [{ text: 'Понятно', cls: 'ghost' }] });
+        UI.modal({ title: 'Переговоры о контракте', content: el('div.renew', null, [el('div.pc-name', null, [UI.pname(p)]), el('p', { text: d.refuse }), el('div.agent', null, G.FIN.agentNotes(p, club).map(t => el('div', { text: '💬 ' + t })))]), buttons: [{ text: 'Понятно', cls: 'ghost' }] });
         return;
       }
       if (d.tries <= 0) { UI.toast(`${p.name} не хочет обсуждать контракт до конца сезона`, 'warn'); return; }
@@ -1642,7 +1662,7 @@
       const yrs = el('div.seg');
       [1, 2, 3, 4, 5].forEach(y => yrs.appendChild(el('button' + (y === state.years ? '.on' : ''), { text: y + ' ' + U.plural(y, 'год', 'года', 'лет'), onclick: (e) => { state.years = y; U.$$('button', yrs).forEach(b => b.classList.remove('on')); e.target.classList.add('on'); redraw(); } })));
       const hint = el('div.renew-hint');
-      content.append(el('div.pc-head', null, [el('div', null, [el('div.pc-name', { text: p.name }), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · стоимость ${G.FIN.fmtM(G.FIN.value(p))}` })])]),
+      content.append(el('div.pc-head', null, [el('div', null, [el('div.pc-name', null, [UI.pname(p)]), el('div.pc-sub', { text: `${UI.posName(p.pos)} · ${p.age} лет · рейтинг ${TAC.overall(p).toFixed(1)} · стоимость ${G.FIN.fmtM(G.FIN.value(p))}` })])]),
         el('div.agent', null, G.FIN.agentNotes(p, club).map(t => el('div', { text: '💬 ' + t }))),
         info, el('div.renew-row', null, [el('span', { text: 'Зарплата' }), slider, wageVal]), el('div.renew-row', null, [el('span', { text: 'Срок' }), yrs]), hint);
       redraw();
