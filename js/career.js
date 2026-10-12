@@ -92,7 +92,7 @@
       if (U.rnd() < ch) { out.push(p); return false; }
       return true;
     });
-    st.fa = st.fa.sort((a, b) => FIN().value(b) - FIN().value(a)).slice(0, POOL_MAX);
+    capPool(st);
     const notable = out.filter(p => TAC.overall(p) >= 15);
     if (notable.length) st.news.push({ r: 0, text: `🎩 Не найдя клуба, завершили карьеру: ${notable.slice(0, 4).map(p => `${p.name} (${p.age})`).join(', ')}${out.length > notable.length ? ` и ещё ${out.length - notable.length} свободных агентов` : ''}.` });
     st.faRetired = (st.faRetired || 0) + out.length;
@@ -100,6 +100,8 @@
 
   /* ---------- свободные агенты ---------- */
   function pool(st) { if (!st.fa) st.fa = []; return st.fa; }
+  /* Ограничение пула: остаются самые востребованные */
+  function capPool(st, max) { if (pool(st).length > (max || POOL_MAX)) st.fa = st.fa.sort((a, b) => FIN().value(b) - FIN().value(a)).slice(0, max || POOL_MAX); }
   function release(st, c, p, why) {
     c.players = c.players.filter(x => x !== p); delete c._map;
     p.club = null; p.loan = null; p.contract = 0; p.treq = false; p.retiring = false;
@@ -221,19 +223,23 @@
       // режим экономии: расторжение по соглашению сторон с самыми дорогими запасными
       if (TR().austerity(c)) {
         const cut = [];
-        for (let i = 0; i < 3 && c.players.length > 22; i++) {
+        for (let i = 0; i < 5 && c.players.length > 20; i++) {
           const exp = c.players.filter(p => !p.loan && p.age >= 26 && ['surplus', 'rotation'].includes(TR().status(c, p)) && c.players.filter(x => x.pos === p.pos).length > TR().MIN_POS[p.pos] + 1).sort((a, b) => b.wage - a.wage)[0];
           if (!exp) break;
           release(st, c, exp, 'austerity'); cut.push(exp);
         }
         if (cut.length && !st.userClub) st.news.push({ r: 0, text: `✂ «${c.name}» экономит: контракты расторгнуты с ${cut.map(p => p.name).join(', ')}.` });
       }
+    }
+    for (const c of st.clubs) {
+      if (c.id === st.userClub) continue;
       while (c.players.length > 28) {
         const sur = c.players.filter(p => !p.loan && c.players.filter(x => x.pos === p.pos).length > TR().MIN_POS[p.pos] + 1).sort((a, b) => TAC.overall(a) - TAC.overall(b));
         if (!sur.length) break;
         release(st, c, sur[0], 'trim');
       }
     }
+    capPool(st);
   }
 
   /* ---------- тренеры ---------- */
@@ -336,7 +342,7 @@
     const K = G.LEAGUE.cal(st);
     if (st.round === K.retire) announceRetirements(st);
     aiSackings(st);
-    if (st.round > 0 && st.round % K.freeEvery === 0) aiFree(st, false);
+    if (st.round > 0 && st.round % K.freeEvery === 0) { aiFree(st, false); capPool(st, POOL_MAX + 20); }
     checkUser(st, false);
   }
 

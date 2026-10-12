@@ -58,6 +58,7 @@
     const s = status(seller, p);
     let k = { key: 1.6, starter: 1.3, rotation: 1.1, surplus: 0.9 }[s];
     if (seller.id !== st.userClub && aiListed(seller, p)) k *= 0.85;
+    if (seller.id !== st.userClub && fireSale(seller, p)) k *= 0.8; // распродажа: деньги нужны срочно
     if (seller.fin && seller.fin.balance < 20) k *= 0.9;
     if (windowState(st).id && windowState(st).id.endsWith('w')) k *= 1.1;
     return Math.max(0.3, Math.round(FIN().value(p) * k * 10) / 10);
