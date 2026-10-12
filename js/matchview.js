@@ -49,7 +49,9 @@
       this.scoreEl = el('div.sb-score', { text: '0 : 0' });
       this.timeEl = el('div.sb-time', { text: "1'" });
       this.progEl = el('div.sb-prog', null, [el('i')]);
-      sb.append(team(H, 'home'), el('div.sb-center', null, [this.scoreEl, this.timeEl, this.progEl]), team(A, 'away'));
+      const env = this.match.env, wx = G.ENGINE.WEATHER[(env && env.weather) || 'clear'];
+      const envTxt = env ? `${wx.i} ${wx.n} · ${env.neutral ? 'нейтральное поле' : `📣 ${Math.round(env.fill * 100)}% трибун`}` : '';
+      sb.append(team(H, 'home'), el('div.sb-center', null, [this.scoreEl, this.timeEl, this.progEl, envTxt ? el('div.sb-env', { title: wx.d, text: envTxt }) : null]), team(A, 'away'));
       root.appendChild(sb);
 
       const grid = el('div.match-grid');

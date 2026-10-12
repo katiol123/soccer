@@ -258,19 +258,30 @@
   function matchday(st, fixture, table) {
     const club = st.clubs.find(c => c.id === fixture.h);
     if (!club || !club.fin) return;
-    if (fixture.cup) return cupGate(st, fixture, club, st.clubs.find(c => c.id === fixture.a));
-    const N = table ? table.length : 20;
-    const pos = table ? table.findIndex(r => r.id === club.id) + 1 : N / 2;
-    const att = U.clamp(0.82 + (N - pos) * 0.008 * 20 / N + U.rnd() * 0.05 + (fixture.po ? 0.15 : 0), 0.7, 1);
+    const att = fixture.env && fixture.env.fill != null ? fixture.env.fill : attend(st, fixture);
+    if (fixture.cup) return cupGate(st, fixture, club, st.clubs.find(c => c.id === fixture.a), att);
     const gate = (club.cap || CAPACITY[club.id] || 30) * att * ticket(club) / 1000;
     book(club, 'gate', Math.round(gate * 100) / 100);
     fixture.res.att = Math.round((club.cap || CAPACITY[club.id] || 30) * att * 1000);
   }
 
   /* Кубок: выручка делится между клубами (55/45, на «Уэмбли» — поровну); выезд к клубу выше классом собирает аншлаг */
-  function cupGate(st, f, H, A) {
+  /* Заполняемость стадиона на матч (0..1): место хозяев, статус матча, кубок, погода */
+  function attend(st, f) {
+    const H = st.clubs.find(c => c.id === f.h), A = st.clubs.find(c => c.id === f.a);
+    if (f.neutral) return U.clamp(0.8 + U.rnd() * 0.2, 0.8, 1);
+    let att;
+    if (f.cup) att = 0.72 + (tierOf(H) - tierOf(A)) * 0.1 + U.rnd() * 0.1;
+    else {
+      const t = G.LEAGUE.standings(st, H.league), N = t.length, pos = t.findIndex(r => r.id === H.id) + 1;
+      att = 0.82 + (N - pos) * 0.008 * 20 / N + U.rnd() * 0.05 + (f.po ? 0.15 : 0);
+    }
+    const wx = f.env && f.env.weather;
+    att -= wx === 'snow' ? 0.08 : (wx === 'rain' || wx === 'heavy') ? 0.03 : 0;
+    return U.clamp(att, f.cup ? 0.55 : 0.65, 1);
+  }
+  function cupGate(st, f, H, A, att) {
     const cap = f.neutral ? 90 : (H.cap || CAPACITY[H.id] || 30);
-    const att = f.neutral ? U.clamp(0.8 + U.rnd() * 0.2, 0.8, 1) : U.clamp(0.72 + (tierOf(H) - tierOf(A)) * 0.1 + U.rnd() * 0.1, 0.55, 1);
     const price = f.neutral ? 60 : ticket(H) * 0.85;
     const gate = Math.round(cap * att * price / 1000 * 100) / 100, hs = f.neutral ? 0.5 : 0.55;
     book(H, 'gate', gate * hs); if (A && A.fin) book(A, 'gate', gate * (1 - hs));
@@ -456,5 +467,5 @@
   const fmtM = v => (v < 0 ? '−' : '') + '£' + Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1) + ' млн';
   const fmtW = v => '£' + Math.round(v) + ' тыс./нед';
 
-  G.FIN = { CAPACITY, EMB_WAGE, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
+  G.FIN = { CAPACITY, EMB_WAGE, attend, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
 })(typeof window !== 'undefined' ? window : globalThis);

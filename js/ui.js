@@ -260,7 +260,7 @@
     /* Решение тренера соперника кэшируется на тур, чтобы скаут-отчёт совпадал с матчем */
     oppPlan(f, opp, uc, home) {
       const key = this.st.season + ':' + this.st.round + ':' + opp.id + (f.cup ? ':cup' : '');
-      if (!this._pred || this._pred.key !== key) this._pred = { key, tac: AI.prepare(opp, uc, home, f.cup ? { cup: f } : null) };
+      if (!this._pred || this._pred.key !== key) this._pred = { key, tac: AI.prepare(opp, uc, home, { cup: f.cup ? f : null, env: LEAGUE.matchEnv(this.st, f) }) };
       return this._pred.tac;
     },
 
@@ -348,6 +348,7 @@
           el('div.nm-vs', { text: 'VS' }),
           el('div.nm-t', null, [UI.crest(away, 72), el('b', null, [UI.cname(away)]), el('small', { text: `${pos(away.id)} место · ${TAC.teamRating(away).toFixed(1)}` })])
         ]),
+        this.envLine(f),
         el('div.nm-scout', null, [
           el('div.nm-scout-h', null, [el('span', { text: '🔎 Скаутский отчёт' }), el('b', { text: `${opp.coach.name}` })]),
           el('p', { text: opp.coach.motto }),
@@ -409,6 +410,18 @@
       } else if (!remainingAI.length) foot.appendChild(el('span.muted', { text: 'Остался только ваш матч.' }));
       card.appendChild(foot);
       return card;
+    },
+
+    /* Условия матча: погода, ожидаемая посещаемость и сила поддержки */
+    envLine(f) {
+      const env = LEAGUE.matchEnv(this.st, f), wx = G.ENGINE.WEATHER[env.weather], hk = Math.round((Math.sqrt(G.ENGINE.homeK(env)) - 1) * 1000) / 10;
+      const fans = Math.round(env.fill * env.cap * 1000).toLocaleString('ru');
+      return el('div.env-line', null, [
+        el('span', { title: wx.d, text: `${wx.i} ${wx.n}` }),
+        el('span', { text: `🏟 ~${fans} зрителей (${Math.round(env.fill * 100)}%)` }),
+        el('span', { title: 'Домашнее преимущество зависит от заполняемости и размера стадиона', text: env.neutral ? '⚖ нейтральное поле' : `📣 поддержка хозяев: +${hk}% к атаке` }),
+        env.weather !== 'clear' ? el('small.muted', { text: wx.d }) : null
+      ]);
     },
 
     /* Кубковые матчи недели на главной: свой матч и самые громкие пары */
@@ -504,13 +517,14 @@
       const uc = st.userClub;
       const tacFor = (club, opp, home) => {
         if (club.id === uc) return this.userTac(f);
-        return AI.prepare(club, opp, home, f.cup ? { cup: f } : null);
+        return AI.prepare(club, opp, home, { cup: f.cup ? f : null, env });
       };
+      const env = LEAGUE.matchEnv(st, f);
       const ht = opts && opts.homeTac || tacFor(h, a, true), at = opts && opts.awayTac || tacFor(a, h, false);
       return new ENGINE.Match({
         home: { club: h, tactics: ht, ctrl: (opts && opts.human === 'home') ? 'human' : 'ai' },
         away: { club: a, tactics: at, ctrl: (opts && opts.human === 'away') ? 'human' : 'ai' },
-        turns: st.settings.turns, log: !!(opts && opts.log), interactive: !!(opts && opts.interactive)
+        turns: st.settings.turns, log: !!(opts && opts.log), interactive: !!(opts && opts.interactive), env
       });
     },
 
@@ -581,6 +595,7 @@
         el('button.btn.primary.big', { text: 'На поле ▶', onclick: () => this.playUserMatch(f, oppTac) })
       ]);
       root.appendChild(header);
+      root.appendChild(this.envLine(f));
       const body = el('div.pm-body');
       const mine = el('div.card.pm-mine', null, [el('h3', { text: 'Ваша тактика' })]);
       const myTac = this.userTac(f);
@@ -641,7 +656,7 @@
       r.goals.forEach(g => gl.appendChild(el('div.ft-g.' + g.side, { text: `⚽ ${g.min} ${g.scorer}${g.kind === 'pen' ? ' (пен.)' : ''}${g.assist ? ' (' + g.assist + ')' : ''}` })));
       content.appendChild(gl);
       if (r.motm) content.appendChild(el('div.ft-motm', null, [el('small', { text: 'Игрок матча' }), el('b', { text: `${r.motm} — ${r.motmR}` })]));
-      if (r.att) content.appendChild(el('div.muted', { text: `🏟 ${h.stadium}: ${r.att.toLocaleString('ru')} зрителей`, style: { textAlign: 'center' } }));
+      if (r.att) content.appendChild(el('div.muted', { text: `🏟 ${f.neutral ? '«Уэмбли»' : h.stadium}: ${r.att.toLocaleString('ru')} зрителей${f.env ? ` · ${G.ENGINE.WEATHER[f.env.weather].i} ${G.ENGINE.WEATHER[f.env.weather].n}` : ''}`, style: { textAlign: 'center' } }));
       const s = r.stats;
       const tbl = el('div.stats');
       [['Удары', 'shots'], ['В створ', 'onT'], ['xG', 'xg'], ['Угловые', 'corners'], ['Отборы', 'wins'], ['Фолы', 'fouls'], ['Жёлтые', 'yc'], ['Красные', 'rc']].forEach(([n, k]) => {

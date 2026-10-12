@@ -62,7 +62,8 @@
       possession: prof.pas, counter: prof.pac, gegenpress: (prof.tac + prof.sta) / 2,
       wings: (prof.dri + prof.pos) / 2, direct: (prof.sho + prof.pac) / 2, park: (prof.pos + prof.tac) / 2
     };
-    let bestPlan = null;
+    let bestPlan = null, bestWx = null;
+    const env = opts && opts.env, wx = env && G.ENGINE ? G.ENGINE.WEATHER[env.weather] : null;
     for (const k in aff) {
       let s = aff[k] * (0.4 + c.adapt);
       if (k === c.plan) s += 3 * (1.2 - c.adapt) + 1;
@@ -70,9 +71,13 @@
       if (diff > 1.5 && (k === 'possession' || k === 'gegenpress')) s += 0.8 * c.adapt;
       if (k === 'park' && diff > -1) s -= 3;
       if (opp.coach.line >= 1.5 && k === 'counter') s += 0.7 * c.adapt;
-      if (!bestPlan || s > bestPlan.s) bestPlan = { k, s };
+      if (!bestPlan || s > bestPlan.s) bestPlan = { k, s, s0: s };
+      // погода: гибкий тренер подстраивает план под условия
+      const wk = wx && wx.plan[k] ? (wx.plan[k] - 1) * 45 * c.adapt : 0;
+      if (!bestWx || s + wk > bestWx.s) bestWx = { k, s: s + wk };
     }
-    const plan = bestPlan.k;
+    const plan = bestWx.k;
+    if (plan !== bestPlan.k) notes.push(`${wx.i} ${wx.n}: ${wx.d.toLowerCase()} — выбираем «${TAC.PLANS[plan].n}».`);
     if (plan !== c.plan) notes.push(`План изменён на «${TAC.PLANS[plan].n}»: ${planReason(plan, prof, oprof, diff)}.`);
     else notes.push(`Фирменный план — «${TAC.PLANS[plan].n}».`);
 

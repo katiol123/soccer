@@ -25,6 +25,22 @@
   const R = (a, b) => U.clamp(Math.pow((a + 6) / (b + 6), 1.35), 0.5, 1.9);
   const ZONE_TXT = ['у своей штрафной', 'на своей половине', 'в центре поля', 'на половине соперника', 'в штрафной соперника'];
   const ATK_M = [0.86, 1, 1.14], DEF_M = [1.15, 1, 0.88];
+  /* Погода: поправки к характеристикам, расход сил и эффективность планов */
+  const WEATHER = {
+    clear: { n: 'Ясно', i: '☀️', attr: {}, drain: 1, plan: {}, d: 'Идеальные условия' },
+    rain: { n: 'Дождь', i: '🌧', attr: { dri: -1, pas: -0.5 }, drain: 1.05, plan: { possession: 0.96, direct: 1.03 }, d: 'Скользкий мяч мешает технике, выгоднее играть проще' },
+    heavy: { n: 'Тяжёлое поле', i: '🟫', attr: { dri: -1.5, pas: -1, pac: -1 }, drain: 1.2, plan: { possession: 0.93, gegenpress: 0.96, direct: 1.05, park: 1.03 }, d: 'Вязкий газон: техника и скорость страдают, силы уходят быстрее' },
+    wind: { n: 'Сильный ветер', i: '💨', attr: { sho: -1, pas: -0.5 }, drain: 1, plan: { wings: 0.94, direct: 0.97, counter: 1.03, possession: 1.02 }, d: 'Навесы и дальние удары летят мимо, лучше короткий пас' },
+    snow: { n: 'Снег', i: '❄️', attr: { dri: -1, pac: -1, pas: -0.5 }, drain: 1.1, plan: { possession: 0.95, direct: 1.03, counter: 0.97 }, d: 'Мяч вязнет, скорость и обводка падают' }
+  };
+  /* Домашнее преимущество: чем полнее и больше арена, тем сильнее поддержка (нейтральное поле — 0).
+     Делится поровну: хозяева атакуют сильнее, гости — слабее, общее число голов почти не меняется */
+  function homeK(env) {
+    if (!env) return 1.2;
+    if (env.neutral) return 1;
+    const loud = U.clamp(0.6 + (env.cap || 30) / 100, 0.6, 1.25);
+    return 1 + 0.05 + 0.2 * (env.fill == null ? 0.9 : env.fill) * loud;
+  }
   const PRESS_M = [0.82, 1, 1.2], PRESS_DRAIN = [0.8, 1, 1.3];
 
   class TeamState {
@@ -64,6 +80,9 @@
       this.H = cfg.turns || 24; // ходов (суммарно на обе команды) в тайме
       this.log = !!cfg.log;
       this.interactive = !!cfg.interactive;
+      this.env = cfg.env || null;
+      this.wx = WEATHER[(this.env && this.env.weather) || 'clear'] || WEATHER.clear;
+      this.homeK = homeK(this.env);
       this.t = {
         home: new TeamState('home', cfg.home.club, cfg.home.tactics, cfg.home.ctrl),
         away: new TeamState('away', cfg.away.club, cfg.away.tactics, cfg.away.ctrl)
@@ -149,6 +168,7 @@
       }
       if (p.m && p.m.shift) v += p.m.shift;
       if (p.m && p.m.formB) v += p.m.formB;
+      if (this.wx.attr[k]) v += this.wx.attr[k];
       return U.clamp(v, 1, 22);
     }
     /* Командный множитель (произведение по игрокам на поле) */
@@ -215,7 +235,7 @@
       return it.p;
     }
     plan(side) { return this.t[side].tac.plan; }
-    atkM(side) { return ATK_M[this.t[side].tac.mentality] * (this.plan(side) === 'park' ? 0.75 : 1) * (side === 'home' ? 1.04 : 1); }
+    atkM(side) { return ATK_M[this.t[side].tac.mentality] * (this.plan(side) === 'park' ? 0.75 : 1) * Math.pow(this.homeK, side === 'home' ? 0.5 : -0.5) * (this.wx.plan[this.plan(side)] || 1); }
     defM(side) { return DEF_M[this.t[side].tac.mentality] * (this.plan(side) === 'park' ? 1.15 : 1); }
 
     say(kind, text, side, extra) {
@@ -771,7 +791,7 @@
       // усталость
       for (const s of ['home', 'away']) {
         const ts = this.t[s];
-        const drain = CFG.drain * PRESS_DRAIN[ts.tac.pressing] * (ts.tac.plan === 'gegenpress' ? 1.2 : 1) * (ts.tac.plan === 'park' ? 0.85 : 1);
+        const drain = CFG.drain * this.wx.drain * PRESS_DRAIN[ts.tac.pressing] * (ts.tac.plan === 'gegenpress' ? 1.2 : 1) * (ts.tac.plan === 'park' ? 0.85 : 1);
         for (const x of ts.onPitch) {
           if (!x.p) continue;
           const role = x.slot.role === 'GK' ? 0.25 : 1;
@@ -902,5 +922,5 @@
     }[c] || 'КОМБО!';
   }
 
-  G.ENGINE = { Match, CFG, PHASE, R, ZONE_TXT };
+  G.ENGINE = { Match, CFG, PHASE, R, ZONE_TXT, WEATHER, homeK };
 })(typeof window !== 'undefined' ? window : globalThis);

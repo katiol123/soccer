@@ -11,8 +11,8 @@ for (let s = 0; s < N; s++) {
   while (!LEAGUE.seasonOver(st)) {
     for (const f of LEAGUE.weekFixtures(st)) {
       const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a);
-      const o = f.cup ? { cup: f } : null;
-      const m = new ENGINE.Match({ home: { club: h, tactics: AI.prepare(h, a, true, o) }, away: { club: a, tactics: AI.prepare(a, h, false, o) }, turns: st.settings.turns });
+      const env = LEAGUE.matchEnv(st, f), o = { cup: f.cup ? f : null, env };
+      const m = new ENGINE.Match({ home: { club: h, tactics: AI.prepare(h, a, true, o) }, away: { club: a, tactics: AI.prepare(a, h, false, o) }, turns: st.settings.turns, env });
       m.simulate(); LEAGUE.record(st, f, m);
     }
     LEAGUE.advance(st);
@@ -24,6 +24,7 @@ for (let s = 0; s < N; s++) {
   }
   if (st.cup) { console.log('Кубок Англии:', st.cup.rounds.map(r => `${r.name}@${r.week + 1}(${r.ties.length})`).join(' '), '| победитель:', st.cup.winner && LEAGUE.club(st, st.cup.winner).name, '| финал:', st.cup.rounds[st.cup.rounds.length - 1].ties.map(f => `${LEAGUE.club(st, f.h).short} ${f.res.hs}:${f.res.as}${f.res.pen ? ' пен.' : ''} ${LEAGUE.club(st, f.a).short}`).join('')); }
   const injN = st.clubs.reduce((n, c) => n + c.players.filter(p => p.inj > 0).length, 0); console.log('травмированы сейчас:', injN, '| сенсаций:', st.news.filter(n => /Сенсация/.test(n.text)).length);
+  { const all = LEAGUE.leagueIds(st).flatMap(l => st.leagues[l].fixtures.flat()).filter(f => f.res && !f.po); const hw = all.filter(f => f.res.hs > f.res.as).length, dr = all.filter(f => f.res.hs === f.res.as).length; const wx = {}; all.forEach(f => { const w = f.env ? f.env.weather : '?'; wx[w] = (wx[w] || 0) + 1; }); console.log(`П1 ${(hw / all.length * 100).toFixed(0)}% Н ${(dr / all.length * 100).toFixed(0)}% П2 ${((all.length - hw - dr) / all.length * 100).toFixed(0)}% | голов ${(all.reduce((a, f) => a + f.res.hs + f.res.as, 0) / all.length).toFixed(2)} | погода`, JSON.stringify(wx)); }
   const sum = LEAGUE.seasonSummary(st);
   console.log('Повышение:', sum.promoted.map(x => LEAGUE.club(st, x.id).name).join(', '), '| плей-офф:', sum.playoff && LEAGUE.club(st, sum.playoff).name, '| вылет:', sum.relegated.map(x => LEAGUE.club(st, x.id).name).join(', '));
   const po = ['eng2', 'eng3'].filter(l => st.leagues[l]).flatMap(l => st.leagues[l].fixtures.slice(-2).flat()).map(f => `${LEAGUE.club(st, f.h).short} ${f.res.hs}:${f.res.as}${f.res.pen ? ' пен.' + f.res.pen : ''} ${LEAGUE.club(st, f.a).short}`);

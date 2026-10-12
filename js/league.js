@@ -132,6 +132,18 @@
     return n;
   }
 
+  /* Условия матча: погода (зимой — чаще дождь, тяжёлое поле и снег) и заполняемость стадиона.
+     Определяются один раз и сохраняются в матче */
+  function matchEnv(st, f) {
+    if (f.env) return f.env;
+    const x = st.round / Math.max(1, weeks(st) - 1), w = Math.exp(-Math.pow((x - 0.5) / 0.2, 2));
+    const P = { clear: 0.55 - 0.3 * w, rain: 0.22 + 0.08 * w, wind: 0.12, heavy: 0.03 + 0.12 * w, snow: 0.08 * w };
+    const H = club(st, f.h);
+    f.env = { weather: U.pickWeighted(Object.keys(P), k => P[k]), neutral: !!f.neutral, cap: f.neutral ? 90 : (H.cap || 30) };
+    f.env.fill = Math.round(G.FIN.attend(st, f) * 1000) / 1000;
+    return f.env;
+  }
+
   /* ---------- плей-офф ---------- */
   function winner(f) {
     if (!f.res) return null;
@@ -468,5 +480,5 @@
   async function exportSave(st) { await G.STORE.exportFile(serialize(st), `kombinaciya-${st.seasonName.replace('/', '-')}-tur${st.round + 1}`); }
   async function importSave(file) { const st = revive(await G.STORE.importFile(file)); if (!st) throw new Error('Файл не похож на сохранение игры'); save(st); return st; }
 
-  G.LEAGUE = { leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
+  G.LEAGUE = { matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
 })(typeof window !== 'undefined' ? window : globalThis);
