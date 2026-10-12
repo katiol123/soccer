@@ -797,3 +797,4 @@ table.league tr.po td.pos { box-shadow: inset 3px 0 0 #ffd23f; }
 .se-lg small, .se-move small { display: block; color: var(--muted); font-size: 12px; }
 .se-move { padding: 10px 14px; border-radius: 14px; background: rgba(255,255,255,.04); text-align: left; }
 .se-move.up { box-shadow: inset 3px 0 0 #00ff87; } .se-move.down { box-shadow: inset 3px 0 0 #ff4d6d; }
+.fx-pos { color: var(--muted); font-weight: 500; font-size: .85em; }

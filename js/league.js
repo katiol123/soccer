@@ -227,6 +227,8 @@
         }
       }
     }
+    // игрок матча получает небольшой прилив настроения
+    if (motm && motm.mood != null) motm.mood = Math.min(100, motm.mood + 5);
     fixture.res = { hs: match.score.home, as: match.score.away, goals, stats, motm: motm ? motm.name : null, motmR: motm ? motm.m.rating : null, watched: !!match.watched };
     // плей-офф: ничья — серия пенальти (шанс зависит от силы и хладнокровия)
     if (fixture.po && fixture.res.hs === fixture.res.as) {

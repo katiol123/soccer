@@ -345,14 +345,15 @@
       if (seg) card.appendChild(seg);
       const list = el('div.fixtures');
       if (!rd.length) list.appendChild(el('div.muted', { text: 'Пауза в календаре этой лиги.' }));
+      const tbl = LEAGUE.standings(st, lid), place = id => tbl.findIndex(r => r.id === id) + 1;
       rd.forEach(f => {
         const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a);
         const mine = st.userClub && (f.h === st.userClub || f.a === st.userClub);
         const row = el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''));
         row.append(
-          el('div.fx-t.h', null, [el('span', { text: h.name }), UI.crest(h, 26)]),
+          el('div.fx-t.h', null, [el('span', null, [h.name, el('small.fx-pos', { text: ` (${place(h.id)})` })]), UI.crest(h, 26)]),
           el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}` : '– : –' }),
-          el('div.fx-t.a', null, [UI.crest(a, 26), el('span', { text: a.name })])
+          el('div.fx-t.a', null, [UI.crest(a, 26), el('span', null, [a.name, el('small.fx-pos', { text: ` (${place(a.id)})` })])])
         );
         const acts = el('div.fx-act');
         if (!f.res) {
