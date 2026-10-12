@@ -543,6 +543,7 @@ td.pname { font-weight: 700; }
 .ft-score { font-family: var(--fh); font-weight: 900; font-size: 46px; }
 .ft-goals { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px; font-size: 13px; }
 .ft-g.home { grid-column: 1; text-align: right; } .ft-g.away { grid-column: 2; }
+.ft-a { opacity: .7; font-size: .85em; }
 .ft-motm { text-align: center; padding: 10px; border-radius: 14px; background: linear-gradient(90deg, rgba(255,210,63,.05), rgba(255,210,63,.2), rgba(255,210,63,.05)); border: 1px solid rgba(255,210,63,.35); }
 .ft-motm small { display: block; color: var(--gold); text-transform: uppercase; font-size: 11px; letter-spacing: .1em; }
 .ft-motm b { font-family: var(--fh); }

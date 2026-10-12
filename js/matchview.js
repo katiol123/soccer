@@ -506,7 +506,13 @@
       el('div.ft-team', null, [UI.crest(A.club, 64), el('b', { text: A.club.name })])
     ]));
     const gl = el('div.ft-goals');
-    m.goals.forEach(g => gl.appendChild(el('div.ft-g.' + g.side, { text: `⚽ ${g.min} ${g.scorer}${g.kind === 'pen' ? ' (пен.)' : ''}` })));
+    const byId = id => H.club.players.concat(A.club.players).find(p => p.id === id);
+    const who = (id, name) => { const p = id != null && byId(id); return p ? UI.pname(p) : el('span', { text: name }); };
+    m.goals.forEach(g => gl.appendChild(el('div.ft-g.' + g.side, null, [
+      el('span', { text: `⚽ ${g.min} ` }), who(g.scorerId, g.scorer),
+      g.kind === 'pen' ? el('span', { text: ' (пен.)' }) : null,
+      g.assist ? el('small.ft-a', null, [el('span', { text: ' · ассист: ' }), who(g.assistId, g.assist)]) : null
+    ].filter(Boolean))));
     content.appendChild(gl);
     const all = H.club.players.concat(A.club.players).filter(p => p.m && p.m.played);
     const motm = all.slice().sort((a, b) => (b.m.rating || 0) - (a.m.rating || 0))[0];
@@ -515,7 +521,8 @@
     for (const ts of [H, A]) {
       const col = el('div.ft-col', null, [el('h4', { text: ts.club.name })]);
       ts.club.players.filter(p => p.m && p.m.played).sort((a, b) => (b.m.rating || 0) - (a.m.rating || 0)).forEach(p => {
-        col.appendChild(el('div.ft-r', null, [UI.pname(p), el('b', { text: (p.m.rating || 0).toFixed(1), style: { color: p.m.rating >= 7.5 ? '#00ff87' : p.m.rating >= 6.5 ? '#e7d64a' : '#ff8a3d' } })]));
+        const ga = (p.m.goals ? ' ⚽' + (p.m.goals > 1 ? '×' + p.m.goals : '') : '') + (p.m.assists ? ' 🅰' + (p.m.assists > 1 ? '×' + p.m.assists : '') : '');
+        col.appendChild(el('div.ft-r', null, [el('span', null, [UI.pname(p), ga ? el('small.ft-a', { text: ga }) : null].filter(Boolean)), el('b', { text: (p.m.rating || 0).toFixed(1), style: { color: p.m.rating >= 7.5 ? '#00ff87' : p.m.rating >= 6.5 ? '#e7d64a' : '#ff8a3d' } })]));
       });
       cols.appendChild(col);
     }
