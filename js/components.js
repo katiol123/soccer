@@ -127,6 +127,26 @@
     return s;
   };
 
+  /* Подсказка характеристики: сначала влияние на шкалы команды, затем на индивидуальные действия */
+  /* Всплывающие подсказки для элементов с data-tip (наведение мышью; на сенсорном экране — касание) */
+  if (typeof document !== 'undefined' && !UI._tipInit) {
+    UI._tipInit = true;
+    let box = null, cur = null;
+    const hide = () => { if (box) box.style.display = 'none'; cur = null; };
+    const show = (t, x, y) => {
+      if (!box) { box = document.createElement('div'); box.className = 'tipbox'; document.body.appendChild(box); }
+      if (cur !== t) { box.innerHTML = ''; cur = t; const [head, ...rest] = t.dataset.tip.split('\n\n'); box.appendChild(el('b', { text: head })); rest.forEach(sec => { const [h, ...lines] = sec.split('\n'); box.appendChild(el('div.tip-h', { text: h })); lines.forEach(l => box.appendChild(el('div.tip-l', { text: l }))); }); }
+      box.style.display = 'block';
+      const w = box.offsetWidth, h = box.offsetHeight;
+      box.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, x + 14)) + 'px';
+      box.style.top = (y + 16 + h > window.innerHeight - 8 ? Math.max(8, y - h - 12) : y + 16) + 'px';
+    };
+    document.addEventListener('mousemove', e => { const t = e.target.closest && e.target.closest('[data-tip]'); if (t) show(t, e.clientX, e.clientY); else if (cur) hide(); });
+    document.addEventListener('touchstart', e => { const t = e.target.closest && e.target.closest('[data-tip]'); if (t) { const p = e.touches[0]; show(t, p.clientX, p.clientY); } else hide(); }, { passive: true });
+    document.addEventListener('scroll', hide, true);
+  }
+  UI.attrTip = a => `${a.n}\n\nШкалы команды:\n${(a.g || [a.d]).map(t => '• ' + t).join('\n')}\n\nИндивидуальные действия:\n${(a.i || []).map(t => '• ' + t).join('\n')}`;
+
   UI.playerModal = (p, club) => {
     const content = el('div.player-card');
     const head = el('div.pc-head', null, [
@@ -143,7 +163,7 @@
       const bar = el('div.pc-bar', null, [el('i')]);
       bar.firstChild.style.width = (v / 20 * 100) + '%';
       bar.firstChild.style.background = U.attrColor(v);
-      attrs.appendChild(el('div.pc-attr', { title: a.d }, [el('span', { text: a.n }), bar, UI.attrCell(v)]));
+      attrs.appendChild(el('div.pc-attr', { 'data-tip': UI.attrTip(a) }, [el('span', { text: a.n }), bar, UI.attrCell(v)]));
     }
     content.appendChild(attrs);
     const fb = TAC.formBonus(p);

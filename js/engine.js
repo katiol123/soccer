@@ -455,7 +455,8 @@
         }
       }
       if (c[0] && !(rp >= 3)) {
-        const v = 4 * c[0] * mult;
+        // угроза издалека: сильнее у команды, чьи бьющие игроки опаснее (Удар впереди против Отбора защитников)
+        const v = 4 * c[0] * mult * R(this.val(side, 'sho', 'front'), this.val(OTHER(side), 'tac', 'back'));
         me.shotCharge = Math.min(100, me.shotCharge + v);
         fx.push({ k: 'charge', t: 0, text: '+' + Math.round(v) + ' угроза' });
       }

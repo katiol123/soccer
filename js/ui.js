@@ -1762,7 +1762,7 @@
       const tblWrap = el('div.table-scroll');
       const render = () => {
         const tbl = el('table.squad');
-        tbl.appendChild(el('thead', null, [el('tr', null, cols.map(([k, n]) => el('th' + (k === sortK ? '.on' : ''), { text: n, title: (G.DATA.ATTRS.find(a => a.k === k) || {}).d || '', onclick: () => { if (sortK === k) dir = -dir; else { sortK = k; dir = (k === 'pos' || k === 'name') ? 1 : -1; } render(); } })))]));
+        tbl.appendChild(el('thead', null, [el('tr', null, cols.map(([k, n]) => el('th' + (k === sortK ? '.on' : ''), { text: n, 'data-tip': G.DATA.ATTRS.find(a => a.k === k) ? UI.attrTip(G.DATA.ATTRS.find(a => a.k === k)) : null, onclick: () => { if (sortK === k) dir = -dir; else { sortK = k; dir = (k === 'pos' || k === 'name') ? 1 : -1; } render(); } })))]));
         const tb = el('tbody');
         club.players.slice().sort((a, b) => { const x = get(a, sortK), y = get(b, sortK); return (x > y ? 1 : x < y ? -1 : 0) * dir; }).forEach(p => {
           const tr = el('tr' + (TAC.available(p) ? '' : '.unavail'), { onclick: () => UI.playerModal(p, club) });
