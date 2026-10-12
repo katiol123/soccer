@@ -69,12 +69,33 @@
       c.players = c.players.filter(p => !p.retiring); delete c._map;
       r.forEach(p => gone.push({ p, c }));
     }
-    st.fa = (st.fa || []).filter(p => p.age < 34);
+    retirePool(st);
     const mine = gone.filter(x => x.c.id === st.userClub);
     if (mine.length) st.news.push({ r: 0, text: `🎩 Завершили карьеру: ${mine.map(x => `${x.p.name} (${x.p.age}, ${x.p.st.apps} матчей в последнем сезоне)`).join(', ')}. Спасибо за всё!` });
     const stars = gone.filter(x => x.c.id !== st.userClub && TAC.overall(x.p) >= 16);
     if (stars.length) st.news.push({ r: 0, text: `🎩 Лига прощается: ${stars.slice(0, 4).map(x => `${x.p.name} («${x.c.name}»)`).join(', ')} завершили карьеру.` });
     st.retired = (st.retired || 0) + gone.length;
+  }
+
+  /* Свободные агенты стареют и без тренировок теряют форму; возрастные, слабые и долго
+     сидящие без клуба завершают карьеру. Пул ограничен самыми востребованными */
+  const POOL_MAX = 70;
+  function retirePool(st) {
+    const fa = pool(st), now = st.season * 100 + st.round, out = [];
+    st.fa = fa.filter(p => {
+      p.age++;
+      if (p.age >= 30) for (const k in p.a) if (U.rnd() < 0.3) p.a[k] = Math.max(1, p.a[k] - 1);
+      const idle = now - (p.faSince || 0), ovr = TAC.overall(p);
+      let ch = p.age >= 36 ? 1 : p.age >= 33 ? 0.35 + (p.age - 33) * 0.2 : p.age >= 30 ? 0.1 : 0;
+      if (idle >= 100) ch += 0.35;          // целый сезон без клуба
+      if (ovr < 10) ch += 0.3;
+      if (U.rnd() < ch) { out.push(p); return false; }
+      return true;
+    });
+    st.fa = st.fa.sort((a, b) => FIN().value(b) - FIN().value(a)).slice(0, POOL_MAX);
+    const notable = out.filter(p => TAC.overall(p) >= 15);
+    if (notable.length) st.news.push({ r: 0, text: `🎩 Не найдя клуба, завершили карьеру: ${notable.slice(0, 4).map(p => `${p.name} (${p.age})`).join(', ')}${out.length > notable.length ? ` и ещё ${out.length - notable.length} свободных агентов` : ''}.` });
+    st.faRetired = (st.faRetired || 0) + out.length;
   }
 
   /* ---------- свободные агенты ---------- */
@@ -170,13 +191,13 @@
         p.contract = (p.contract || 1) - 1;
         if (p.contract > 0) return;
         if (c.id === st.userClub) { leaving.push(p); return; }
-        // ИИ: продлевает нужных, отпускает возрастных запасных
-        const s = TR().status(c, p);
+        // ИИ: продлевает нужных, отпускает возрастных запасных; в режиме экономии продлевает только молодых ключевых
+        const s = TR().status(c, p), tight = TR().austerity(c);
         const posN = c.players.filter(x => x.pos === p.pos).length;
-        if ((s === 'surplus' && p.age >= 29) || (p.age >= 32 && s !== 'key' && U.rnd() < 0.5)) {
+        if ((s === 'surplus' && p.age >= 29) || (p.age >= 32 && s !== 'key' && U.rnd() < 0.5) || (tight && !(s === 'key' && p.age <= 29))) {
           if (posN > TR().MIN_POS[p.pos] + 1) { leaving.push(p); return; }
         }
-        const d = FIN().demand(st, p, c); p.wage = d.wage; p.contract = U.randInt(d.years[0], d.years[1]);
+        const d = FIN().demand(st, p, c); p.wage = tight ? Math.round(Math.min(d.wage, p.wage * 0.9)) : d.wage; p.contract = U.randInt(d.years[0], d.years[1]);
       });
       if (!leaving.length) continue;
       leaving.forEach(p => release(st, c, p, 'contract'));
@@ -190,13 +211,23 @@
       }
     }
     // пул ограничен лучшими
-    st.fa = pool(st).sort((a, b) => FIN().value(b) - FIN().value(a)).slice(0, 90);
+    st.fa = pool(st).sort((a, b) => FIN().value(b) - FIN().value(a)).slice(0, POOL_MAX + 20);
   }
 
   /* Переполненные составы ИИ: слабейших запасных — в свободные агенты */
   function trimAI(st) {
     for (const c of st.clubs) {
       if (c.id === st.userClub) continue;
+      // режим экономии: расторжение по соглашению сторон с самыми дорогими запасными
+      if (TR().austerity(c)) {
+        const cut = [];
+        for (let i = 0; i < 3 && c.players.length > 22; i++) {
+          const exp = c.players.filter(p => !p.loan && p.age >= 26 && ['surplus', 'rotation'].includes(TR().status(c, p)) && c.players.filter(x => x.pos === p.pos).length > TR().MIN_POS[p.pos] + 1).sort((a, b) => b.wage - a.wage)[0];
+          if (!exp) break;
+          release(st, c, exp, 'austerity'); cut.push(exp);
+        }
+        if (cut.length && !st.userClub) st.news.push({ r: 0, text: `✂ «${c.name}» экономит: контракты расторгнуты с ${cut.map(p => p.name).join(', ')}.` });
+      }
       while (c.players.length > 28) {
         const sur = c.players.filter(p => !p.loan && c.players.filter(x => x.pos === p.pos).length > TR().MIN_POS[p.pos] + 1).sort((a, b) => TAC.overall(a) - TAC.overall(b));
         if (!sur.length) break;
@@ -290,7 +321,7 @@
       const pos = U.pick(['GK', 'DF', 'DF', 'MF', 'MF', 'FW', 'FW']);
       const age = U.pick([19, 20, 22, 25, 27, 29, 30, 31, 32, 33]);
       const p = G.DATA.makePlayer(fake, pos, 9.5 + U.rnd() * 4.5, age, Math.random, used, 'fa_' + Math.floor(Math.random() * 1e9), 0, false);
-      p.club = null; p.contract = 0; p.wage = Math.round(FIN().fairWage(p)); p.faSince = 0;
+      p.club = null; p.contract = 0; p.wage = Math.round(FIN().fairWage(p)); p.faSince = (st.season || 1) * 100;
       st.fa.push(p);
     }
   }

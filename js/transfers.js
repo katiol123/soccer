@@ -38,10 +38,17 @@
 
   function core(c) { return U.avg(c.players.map(TAC.overall).sort((a, b) => b - a).slice(0, 14)); }
 
-  /* ИИ-клуб готов отпустить: лишний, возрастной или недовольный */
+  /* Режим экономии: клуб под запретом или в минусе без денег владельца */
+  function austerity(c) { return !!c.fin && (FIN().embargo(c) || (c.fin.balance < 0 && !(c.fin.ownLeft > 0.05))); }
+  /* Распродажа: в режиме экономии клуб готов продать самых высокооплачиваемых игроков */
+  function fireSale(c, p) {
+    if (p.loan || !austerity(c)) return false;
+    return c.players.filter(x => !x.loan).sort((a, b) => b.wage - a.wage).slice(0, 5).includes(p);
+  }
+  /* ИИ-клуб готов отпустить: лишний, возрастной, недовольный или дорогой при распродаже */
   function aiListed(c, p) {
     const s = status(c, p);
-    return (s === 'surplus' && (p.age >= 30 || TAC.overall(p) < core(c) - 1.5)) || (p.mood != null && p.mood < 22);
+    return (s === 'surplus' && (p.age >= 30 || TAC.overall(p) < core(c) - 1.5)) || (p.mood != null && p.mood < 22) || fireSale(c, p);
   }
 
   function posCount(c, pos) { return c.players.filter(p => p.pos === pos).length; }
@@ -296,7 +303,7 @@
         if (nd.gap < 0.6 && !nd.lack) continue;
         cands = [];
         for (const seller of st.clubs) {
-          if (seller === buyer || seller.id === st.userClub || seller.players.length <= 22) continue;
+          if (seller === buyer || seller.id === st.userClub || seller.players.length <= (austerity(seller) ? 18 : 22)) continue;
           for (const p of seller.players) {
             if (p.pos !== nd.pos || p.age > 31 || p.moved === w.id || p.joined === st.season || p.loan) continue;
             const ovr = TAC.overall(p);
@@ -304,7 +311,7 @@
             if (notForSale(st, seller, p)) continue;
             // топ-клубы не отдают конкурентам игроков основы
             const sst = status(seller, p);
-            if (sst === 'key' || (sst === 'starter' && FIN().level(seller) <= 6)) continue;
+            if (!fireSale(seller, p) && (sst === 'key' || (sst === 'starter' && FIN().level(seller) <= 6))) continue;
             const fee = asking(st, seller, p);
             if (fee > budget) continue;
             // игрок согласится?
@@ -591,5 +598,5 @@
     }
   }
 
-  G.TR = { PROMISE, loansOut, loansIn, syncLoanWages, loanMinutes, returnLoan, exerciseOption, loanOutOffers, loanOut, loanInTerms, loanIn, aiLoans, checkPromises, endLoans, aiMarket, weakest, needs, market, windowState, status, STATUS_TXT, aiListed, asking, notForSale, neg, bidClub, acceptCounter, terms, offerTerms, list, answerOffer, afterRound, search, findPlayer, MAX_SQUAD, MIN_POS };
+  G.TR = { austerity, fireSale, PROMISE, loansOut, loansIn, syncLoanWages, loanMinutes, returnLoan, exerciseOption, loanOutOffers, loanOut, loanInTerms, loanIn, aiLoans, checkPromises, endLoans, aiMarket, weakest, needs, market, windowState, status, STATUS_TXT, aiListed, asking, notForSale, neg, bidClub, acceptCounter, terms, offerTerms, list, answerOffer, afterRound, search, findPlayer, MAX_SQUAD, MIN_POS };
 })(typeof window !== 'undefined' ? window : globalThis);
