@@ -360,7 +360,7 @@
       let d = won === true ? 4 + (my >= 3 ? 2 : 0) : won === false ? -4 - (my <= -3 ? 2 : 0) : (me === 'h' ? -1 : 1);
       if (derby) d *= 1.8;
       if (f.cup) { const o = me === 'h' ? A : H; if (won === true && tierOf(o) < tierOf(c)) d += 4; if (won === false && tierOf(o) > tierOf(c)) d -= 5; }
-      if (me === 'h' && f.env && f.env.tp) d += f.env.tp <= 0.85 ? 1 : f.env.tp >= 1.45 ? -1.5 : 0;
+      if (me === 'h' && f.env && f.env.tp) d += f.env.tp <= 0.85 ? 0.5 : f.env.tp >= 1.45 ? -1.5 : 0;
       fansAdd(st, c, d, won === false ? (derby ? 'проигрыш в дерби' : 'неудачная серия') : '');
     }
   }
@@ -439,7 +439,7 @@
       if (c.fin.hist.length > 80) c.fin.hist.shift();
     }
     if (st.round % 4 === 3) ownerRound(st);
-    for (const c of st.clubs) if (c.fans != null) c.fans += (58 - c.fans) * 0.03;   // со временем страсти утихают
+    for (const c of st.clubs) if (c.fans != null) c.fans += (55 - c.fans) * 0.04;   // со временем страсти утихают
     sanctions(st, false);
     if (G.TR) G.TR.syncLoanWages(st);
     moodRound(st);

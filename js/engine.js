@@ -37,8 +37,8 @@
   function crowdOf(env) {
     if (env && env.neutral) return 0;
     const cf = !env ? 0.85 : (env.fill == null ? 0.9 : env.fill);
-    const fk = env && env.fans != null ? 0.75 + env.fans / 220 : 1;   // настроение болельщиков: 0 → ×0.75, 100 → ×1.2
-    return 1.55 * Math.pow(cf, 2.5) * U.clamp(0.6 + ((env && env.cap) || 30) / 100, 0.6, 1.25) * fk;
+    const fk = env && env.fans != null ? 0.85 + env.fans / 370 : 1;   // настроение болельщиков: 0 → ×0.85, 55 → ×1, 100 → ×1.12
+    return Math.min(1.3, 1.25 * Math.pow(cf, 2.5) * U.clamp(0.6 + ((env && env.cap) || 30) / 100, 0.6, 1.25) * fk);
   }
   function crowdLabel(c) { return c >= 1.05 ? 'ревущий аншлаг' : c >= 0.75 ? 'сильное' : c >= 0.45 ? 'заметное' : c > 0.1 ? 'слабое' : 'нет'; }
   /* Чувствительность игрока к погоде: техничным тяжелее, силовым и выносливым легче,
@@ -59,10 +59,10 @@
   /* Домашнее преимущество: чем полнее и больше арена, тем сильнее поддержка (нейтральное поле — 0).
      Делится поровну: хозяева атакуют сильнее, гости — слабее, общее число голов почти не меняется */
   function homeK(env) {
-    if (!env) return 1.07;
+    if (!env) return 1.03;
     if (env.neutral) return 1;
     const loud = U.clamp(0.6 + (env.cap || 30) / 100, 0.6, 1.25);
-    return 1 + 0.08 * (env.fill == null ? 0.9 : env.fill) * loud;
+    return 1 + 0.03 * (env.fill == null ? 0.9 : env.fill) * loud;
   }
   const PRESS_M = [0.82, 1, 1.2], PRESS_DRAIN = [0.8, 1, 1.3];
 
