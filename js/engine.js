@@ -381,7 +381,7 @@
         g *= mult * aM * shieldF * directF;
         gain += g; me.st.passes += c[1];
         // точная передача уводит мяч от прессинга (Пас против Отбора соперника)
-        opp.pressure = Math.max(0, opp.pressure - 7 * c[1] * mult * R(this.val(side, 'pas', ph), this.val(OTHER(side), 'tac', dph)));
+        opp.pressure = Math.max(0, opp.pressure - 8 * c[1] * mult * R(this.val(side, 'pas', ph), this.val(OTHER(side), 'tac', dph)));
         fx.push({ k: 'gain', t: 1, v: g, text: '+' + Math.round(g) + ' пас' });
         const passer = this.credit(side, 'pas', ph, 0.02 * c[1]);
         // у чужой штрафной точный пас выводит партнёра на удар: заряд момента растёт (неточный — сбивает)
@@ -437,7 +437,7 @@
         gain += g;
         ctx.paceGain = (ctx.paceGain || 0) + g;
         // рывок уводит мяч от прессингующих (Скорость против Скорости)
-        opp.pressure = Math.max(0, opp.pressure - 5 * c[3] * mult * R(this.val(side, 'pac', ph), this.val(OTHER(side), 'pac', dph)) * (rOk ? 1 : 0.5));
+        opp.pressure = Math.max(0, opp.pressure - 6.5 * c[3] * mult * R(this.val(side, 'pac', ph), this.val(OTHER(side), 'pac', dph)) * (rOk ? 1 : 0.5));
         fx.push({ k: 'gain', t: 3, v: g, text: '+' + Math.round(g) + (cm > 1 ? ' КОНТРАТАКА' : ' рывок') });
       }
       if (c[4]) { // Отбор у владеющей стороны = борьба за мяч
@@ -643,7 +643,8 @@
       // конкретный защитник, встретивший атакующего: по роли в этой зоне и его Отбору/Скорости
       const def = this.pickPlayer(OTHER(side), oppAttr, dph, null, true);
       const dv = def ? this.pa(def, oppAttr) * this.fatF(def) : this.val(OTHER(side), oppAttr, dph);
-      const diff = this.pa(p, attr) * this.fatF(p) - dv;
+      // против обводки Отбор защитника весит 75% (иначе Отбор перевешивает остальные характеристики)
+      const diff = this.pa(p, attr) * this.fatF(p) - (oppAttr === 'tac' ? dv * 0.75 + 2.5 : dv);
       const tr = attr === 'dri' ? (TRAITS.has(p, 'dribbler') ? 0.05 : 0) + (TRAITS.has(p, 'flair') ? 0.03 : 0) : (TRAITS.has(p, 'runner') ? 0.03 : 0);
       const missP = U.clamp(0.2 - diff * 0.025 - tr + (TRAITS.has(def, 'hard') || TRAITS.has(def, 'clean') ? 0.03 : 0), 0.05, 0.5);
       // рывок и обводка стоят сил: атакующему — больше, защитнику в единоборстве — меньше
