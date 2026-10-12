@@ -403,12 +403,15 @@
       if (c[2]) { // Дриблинг
         let g = this.tmul(side, 'dri') * CFG.base.dri * c[2] * R(this.val(side, 'dri', ph), this.val(OTHER(side), 'tac', dph)) * (plan === 'wings' ? 1.2 : 1);
         g *= mult * aM * shieldF * directF;
+        const dribbler = this.credit(side, 'dri', ph, 0.025 * c[2]);
+        // конкретный исполнитель: обыграл или потерял мяч
+        const dOk = !dribbler || this.solo(side, dribbler, 'dri', 'tac', dph, rp, c[2], fx);
+        if (!dOk) g *= 0.5;
         gain += g;
-        const rel = 6 * c[2] * mult * R(this.val(side, 'dri', ph), this.val(OTHER(side), 'tac', dph));
+        const rel = 6 * c[2] * mult * R(this.val(side, 'dri', ph), this.val(OTHER(side), 'tac', dph)) * (dOk ? 1 : 0.5);
         opp.pressure = Math.max(0, opp.pressure - rel);
         fx.push({ k: 'gain', t: 2, v: g, text: '+' + Math.round(g) + ' обводка' });
-        const dribbler = this.credit(side, 'dri', ph, 0.025 * c[2]);
-        if (step.groups.some(gr => gr.t === 2 && gr.size >= 4) && opp.shield > 10) {
+        if (dOk && step.groups.some(gr => gr.t === 2 && gr.size >= 4) && opp.shield > 10) {
           opp.shield *= 0.45;
           fx.push({ k: 'special', t: 2, text: 'ФИНТ! Щит пробит' });
           if (this.log) this.say('skill', `${this.pname(dribbler)} финтом укладывает защитника — оборона рассыпается!`, side);
@@ -421,10 +424,13 @@
         const lineF = [0.85, 1, 1.25][oline];
         let g = this.tmul(side, 'pac') * (rp >= 2 ? this.tmul(OTHER(side), 'oppPac') : 1) * CFG.base.pac * c[3] * R(this.val(side, 'pac', ph), this.val(OTHER(side), 'pac', dph)) * (plan === 'counter' ? 1.3 : 1) * (plan === 'possession' ? 0.85 : 1) * cm * lineF;
         g *= mult * aM * shieldF * directF;
+        const runner = this.credit(side, 'pac', ph, 0.02 * c[3]);
+        // конкретный исполнитель: прорвался или упёрся в защитника
+        const rOk = !runner || this.solo(side, runner, 'pac', 'pac', dph, rp, c[3], fx);
+        if (!rOk) g *= 0.5;
         gain += g;
         ctx.paceGain = (ctx.paceGain || 0) + g;
         fx.push({ k: 'gain', t: 3, v: g, text: '+' + Math.round(g) + (cm > 1 ? ' КОНТРАТАКА' : ' рывок') });
-        this.credit(side, 'pac', ph, 0.02 * c[3]);
       }
       if (c[4]) { // Отбор у владеющей стороны = борьба за мяч
         const rel = 8 * c[4] * mult * R(this.val(side, 'sta', ph), this.val(OTHER(side), 'tac', dph));
@@ -619,6 +625,34 @@
       // участники розыгрыша: кто продвигал мяч в текущей атаке (из них выбирается автор передачи под удар)
       if (p && this.poss === side && (attr === 'pas' || attr === 'dri' || attr === 'pac')) this.chainAdd(side, p, attr);
       return p;
+    }
+    /* Сольное действие (обводка или рывок) конкретного игрока: его характеристика против защиты соперника.
+       Удача — плюс к оценке, у чужой штрафной заряд шкалы момента (и он — автор передачи под удар).
+       Неудача — минус к оценке, половина темпа, заряд контратаки соперника, у штрафной — минус к шкале */
+    solo(side, p, attr, oppAttr, dph, rp, n, fx) {
+      const me = this.t[side], opp = this.t[OTHER(side)];
+      const diff = this.pa(p, attr) - this.val(OTHER(side), oppAttr, dph);
+      const tr = attr === 'dri' ? (TRAITS.has(p, 'dribbler') ? 0.05 : 0) + (TRAITS.has(p, 'flair') ? 0.03 : 0) : (TRAITS.has(p, 'runner') ? 0.03 : 0);
+      const missP = U.clamp(0.2 - diff * 0.025 - tr + (1 - this.fatF(p)) * 0.6, 0.05, 0.5);
+      const what = attr === 'dri' ? ['обыгрыш', 'Потеря при обводке', 'теряет мяч в обводке', 'обыгрывает защитника'] : ['прорыв', 'Упёрся в защитника', 'упирается в защитника', 'прорывается за спину защитникам'];
+      if (U.rnd() < missP) {
+        p.m.perf -= 0.05;
+        this.chainMark(side, p, 'miss');
+        opp.counterCharge = Math.min(70, opp.counterCharge + 4 + U.rnd() * 5);
+        if (rp >= 3) { const lost = Math.min(me.shotCharge, 5 + U.rnd() * 5); me.shotCharge -= lost; }
+        fx.push({ k: 'charge', t: attr === 'dri' ? 2 : 3, text: what[1] });
+        if (this.log && rp >= 2 && U.rnd() < 0.35) this.say('info', `${this.pname(p)} ${what[2]} — соперник может ответить.`, side);
+        return false;
+      }
+      p.m.perf += 0.04;
+      if (rp >= 3) {
+        const v = U.clamp((2.5 + diff * 0.8) * Math.min(1.5, 0.7 + n * 0.15) * this.fatF(p), 2, 12);
+        me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
+        this.chainMark(side, p, 'charged');
+        fx.push({ k: 'charge', t: attr === 'dri' ? 2 : 3, text: `+${Math.round(v)} ${what[0]}` });
+        if (this.log && v >= 6 && U.rnd() < 0.4) this.say('advance', `${this.pname(p)} ${what[3]}!`, side);
+      }
+      return true;
     }
     chainMark(side, p, flag) { const ch = this.chain[side]; for (let i = ch.length - 1; i >= 0; i--) if (ch[i].p === p) { ch[i][flag] = true; return; } }
     chainAdd(side, p, attr) {
