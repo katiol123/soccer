@@ -1057,7 +1057,8 @@
         const all = ts.club.players.filter(p => p.m && p.m.played);
         for (const p of all) {
           let r = 6.15 + p.m.perf + res[s] * 0.35;
-          if ((p.pos === 'DF' || p.pos === 'GK')) r += conceded === 0 ? 0.6 : -0.2 * conceded;
+          if (p.pos === 'GK') r += conceded === 0 ? 1.0 : 0.1 - 0.15 * conceded;   // сухой матч — заметный бонус, пропущенные — небольшой минус
+          else if (p.pos === 'DF') r += conceded === 0 ? 1.25 : 0.25 - 0.15 * conceded;   // у защитников меньше ярких действий — сухой матч весит больше
           r += (U.rnd() - 0.45) * 0.8;
           p.m.rating = U.clamp(Math.round(r * 10) / 10, 3, 10);
         }
