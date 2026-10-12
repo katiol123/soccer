@@ -151,6 +151,20 @@
     const w = c.own ? c.own.w : 10;
     return w >= 16 ? ['Миллиардер', 'покрывает почти любые убытки'] : w >= 11 ? ['Щедрый владелец', 'охотно гасит долги клуба'] : w >= 6 ? ['Осторожный владелец', 'помогает, но в разумных пределах'] : ['Владелец без денег', 'клуб должен жить по средствам'];
   }
+  /* Цель совета в Кубке Англии — стадия, до которой нужно дойти (индекс раунда; null — без цели) */
+  const CUP_STAGES = ['1-й раунд', '3-й раунд', '4-й раунд', '5-й раунд', '1/4 финала', '1/2 финала', 'Финал', 'Победа'];
+  function cupTarget(c) {
+    const L = level(c);
+    return L <= 2 ? 6 : L <= 4 ? 5 : L <= 8 ? 4 : L <= 14 ? 3 : L <= 32 ? 2 : L >= 41 && L <= 46 ? 2 : null;
+  }
+  function cupStageName(st, i) {
+    if (i == null) return null;
+    const R = st.cup && st.cup.rounds;
+    if (R && i < R.length) return R[i].name;
+    return i >= (R ? R.length : 7) ? 'Победа' : CUP_STAGES[i];
+  }
+  /* Текст цели: «дойти до 1/4 финала» / «выиграть кубок» */
+  function cupGoalText(st, i) { if (i == null) return null; const n = cupStageName(st, i); return n === 'Победа' ? 'выиграть кубок' : `дойти до стадии «${n}»`; }
   function embargo(c) { return !!(c.fin && c.fin.embargo); }
   /* Взносы владельца: гасят минус на балансе в пределах оставшейся поддержки на сезон */
   function ownerRound(st) {
@@ -247,6 +261,7 @@
       if (c.fin.ownLeft == null) c.fin.ownLeft = ownerCap(c);
     });
     if (st.userClub && !st.board) st.board = { conf: 60, target: exp[st.userClub] };
+    if (st.board && st.board.cup === undefined) { const uc = st.clubs.find(c => c.id === st.userClub); st.board.cup = uc ? cupTarget(uc) : null; }
   }
 
   function book(club, key, amount) {
@@ -365,9 +380,16 @@
       let conf = b.conf + delta * 4;
       if (up) { verdict = 'в восторге'; conf = Math.max(conf, b.conf) + 25; }
       if (down) { verdict = 'в ярости'; conf -= b.target <= table.length - 3 ? 25 : 8; }
+      // кубок: сравнение достигнутой стадии с целью
+      let cupTxt = '';
+      if (b.cup != null && G.CUP && st.cup && st.cup.season === st.season) {
+        const got = G.CUP.reached(st, st.userClub), dc = got - b.cup;
+        conf += U.clamp(dc * 3, -9, 9);
+        cupTxt = ` Кубок: цель — ${cupStageName(st, b.cup)}, итог — ${got < 0 ? 'не участвовал' : cupStageName(st, got)}${dc >= 0 ? ' ✔' : ' ✘'}.`;
+      }
       b.conf = U.clamp(conf, 5, 100);
       const extra = up ? ' Клуб повышается в классе!' : down ? ' Клуб покидает лигу.' : '';
-      st.news.push({ r: 0, text: `🏛 Совет директоров ${verdict}: цель — ${b.target}-е место, итог — ${pos}-е.${extra} Доверие ${Math.round(b.conf)}%.` });
+      st.news.push({ r: 0, text: `🏛 Совет директоров ${verdict}: цель — ${b.target}-е место, итог — ${pos}-е.${extra}${cupTxt} Доверие ${Math.round(b.conf)}%.` });
     }
     // контракты: ИИ-клубы продлевают нужных, непродлённые становятся свободными агентами
     G.CAR.contractsEnd(st, report);
@@ -390,7 +412,12 @@
   function seasonStart(st) {
     const exp = expectedPositions(st);
     st.clubs.forEach(c => { c.fin.target = exp[c.id]; setBudget(st, c, exp[c.id]); c.fin.ownLeft = ownerCap(c); c.fin.transferBudget = c.fin.embargo ? 0 : Math.round(Math.max(0, c.fin.balance * 0.5)); });
-    if (st.userClub) { st.board.target = exp[st.userClub]; st.board.warned = false; }
+    if (st.userClub) {
+      const uc = st.clubs.find(c => c.id === st.userClub);
+      st.board.target = exp[st.userClub]; st.board.warned = false; st.board.cup = cupTarget(uc);
+      const cg = cupGoalText(st, st.board.cup);
+      st.news.push({ r: 0, text: `🏛 Задачи совета на сезон: ${st.board.target}-е место в лиге${cg ? `, в Кубке Англии — ${cg}` : ''}.` });
+    }
   }
 
   /* Продление контракта игроком-пользователем */
@@ -467,5 +494,5 @@
   const fmtM = v => (v < 0 ? '−' : '') + '£' + Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1) + ' млн';
   const fmtW = v => '£' + Math.round(v) + ' тыс./нед';
 
-  G.FIN = { CAPACITY, EMB_WAGE, attend, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
+  G.FIN = { CAPACITY, EMB_WAGE, attend, cupTarget, cupStageName, cupGoalText, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
 })(typeof window !== 'undefined' ? window : globalThis);

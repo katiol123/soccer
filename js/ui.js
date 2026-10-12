@@ -160,7 +160,7 @@
         const top = c.players.slice().sort((a, b) => TAC.overall(b) - TAC.overall(a)).slice(0, 5);
         const expect = goal(c);
         detail.append(
-          el('div.cd-top', null, [UI.crest(c, 88), el('div', null, [el('h3', { text: c.name }), el('div.cd-sub', { text: `${G.DATA.LEAGUES[c.league].name} · ${c.stadium} · ${c.city}` }), UI.stars(r), el('div.cd-exp', { text: 'Цель: ' + expect })])]),
+          el('div.cd-top', null, [UI.crest(c, 88), el('div', null, [el('h3', { text: c.name }), el('div.cd-sub', { text: `${G.DATA.LEAGUES[c.league].name} · ${c.stadium} · ${c.city}` }), UI.stars(r), el('div.cd-exp', { text: 'Цель: ' + expect + (G.FIN.cupTarget(c) != null ? ` · Кубок: ${G.FIN.cupStageName({}, G.FIN.cupTarget(c))}` : '') })])]),
           el('div.cd-fin', null, [
             el('div', null, [el('small', { text: 'Бюджет зарплат' }), el('b', { text: c.fin ? G.FIN.fmtW(c.fin.wageBudget) : '—' })]),
             el('div', null, [el('small', { text: 'Стоимость состава' }), el('b', { text: G.FIN.fmtM(G.FIN.squadValue(c)) })]),
@@ -1293,7 +1293,8 @@
     boardMeter() {
       const b = this.st.board;
       const col = b.conf >= 60 ? '#00ff87' : b.conf >= 35 ? '#ffd23f' : '#ff4d6d';
-      const m = el('div.meter.board-m', null, [el('div.meter-top', null, [el('span', { text: `Доверие совета · цель: ${b.target}-е место` }), el('b', { text: Math.round(b.conf) + '%' })]), el('div.meter-bar', null, [el('i')])]);
+      const cupN = G.FIN.cupStageName(this.st, b.cup);
+      const m = el('div.meter.board-m', null, [el('div.meter-top', null, [el('span', { text: `Доверие совета · цель: ${b.target}-е место${cupN ? ` · кубок: ${cupN}` : ''}` }), el('b', { text: Math.round(b.conf) + '%' })]), el('div.meter-bar', null, [el('i')])]);
       m.querySelector('i').style.width = b.conf + '%';
       m.querySelector('i').style.background = col;
       return m;

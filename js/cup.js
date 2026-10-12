@@ -79,6 +79,11 @@
         st.cup.winner = w; st.cup.runnerUp = l;
         if (lc && lc.fin) { lc.fin.balance += prize / 2; lc.fin.season.prize += prize / 2; }
       } else st.cup.alive.push(w);
+      // цель совета: вылет раньше цели бьёт по доверию, выполнение — радует
+      if (st.userClub && st.board && st.board.cup != null) {
+        if (st.userClub === l && R.i < st.board.cup) { st.board.conf = Math.max(0, st.board.conf - 3); st.news.push({ r: st.round, text: `🏛 Совет разочарован вылетом из кубка: цель была — ${G.FIN.cupStageName(st, st.board.cup)}.` }); }
+        if (st.userClub === w && R.i + 1 === st.board.cup) st.news.push({ r: st.round, text: `🏛 Задача совета в кубке выполнена: «${wc.name}» дошёл до стадии «${G.FIN.cupStageName(st, st.board.cup)}».` });
+      }
       if (st.userClub === l && R.size !== 2) st.news.push({ r: st.round, text: `💔 «${lc.name}» вылетает из Кубка Англии (${R.name}): ${club(st, f.h).short} ${f.res.hs}:${f.res.as}${f.res.pen ? ' (пен.)' : ''} ${club(st, f.a).short}.` });
     }
     // сенсации: клуб двумя дивизионами ниже (или дивизионом ниже против топ-6) выбивает фаворита
@@ -97,6 +102,15 @@
     if (next) draw(st, R.i + 1);
   }
 
+  /* Достигнутая клубом стадия: индекс последнего сыгранного раунда, число раундов — победа, −1 — не играл */
+  function reached(st, cid) {
+    if (!st.cup) return -1;
+    if (st.cup.winner === cid) return st.cup.rounds.length;
+    let r = -1;
+    st.cup.rounds.forEach((R, i) => { if (R.ties.some(f => f.h === cid || f.a === cid)) r = i; });
+    return r;
+  }
+
   /* Ротация в кубке: сколько основных игроков отдыхает (полуфинал и финал — сильнейший состав) */
   function rotation(club, opp, f) {
     if (!f || !f.cup || f.neutral) return 0;
@@ -106,5 +120,5 @@
     return Math.round(U.clamp(k, 0, 7));
   }
 
-  G.CUP = { NAME, build, draw, weekTies, roundAt, roundName, after, rotation };
+  G.CUP = { NAME, reached, build, draw, weekTies, roundAt, roundName, after, rotation };
 })(typeof window !== 'undefined' ? window : globalThis);

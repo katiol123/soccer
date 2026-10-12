@@ -306,7 +306,7 @@
     st.news.push({ r: st.round, text: `«${old.name}» назначает нового тренера: ${old.coach.name}.` });
     st.userClub = nc.id;
     st.userTactics = TAC.defaultTactics(nc);
-    st.board = { conf: 55, target: nc.fin.target || 10 };
+    st.board = { conf: 55, target: nc.fin.target || 10, cup: FIN().cupTarget(nc) };
     st.lg = nc.league || st.lg;
     st.sacked = null;
     if (TR()) { const m = TR().market(st); m.listed = []; m.offers = []; m.short = []; }
