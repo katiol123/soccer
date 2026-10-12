@@ -16,7 +16,7 @@
     longShot: 0.07, longShotPerGem: 0.03,
     header: 0.13,
     foulBase: 0.15,
-    drain: 0.75,
+    drain: 0.7,
     autoShot: 60
   };
 
@@ -295,7 +295,7 @@
     pickPlayer(side, attr, phase, exclude) {
       const list = this.t[side].onPitch.filter(x => x.p && x.slot.role !== 'GK' && x.p !== exclude);
       if (!list.length) return null;
-      const it = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[phase] + 0.02, 1.5) * Math.pow(this.pa(x.p, attr), 1.6) * (phase === 'front' ? this.pm(x.p, 'attackW') : 1));
+      const it = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[phase] + 0.02, 1.5) * Math.pow(this.pa(x.p, attr) * this.fatF(x.p), 1.6) * (phase === 'front' ? this.pm(x.p, 'attackW') : 1));
       return it.p;
     }
     plan(side) { return this.t[side].tac.plan; }
@@ -391,7 +391,7 @@
             if (icp) icp.m.perf += 0.04;
             this.chainMark(side, passer, 'miss');
             fx.push({ k: 'charge', t: 1, text: `Неточный пас: −${Math.round(lost)} к моменту` });
-            if (this.log && U.rnd() < 0.5) this.say('tackle', icp ? `${this.pname(icp)} перехватывает передачу ${this.pname(passer)} — соперник готовит ответный выпад.` : `${this.pname(passer)} ошибается с передачей — соперник готовит ответный выпад.`, icp ? OTHER(side) : side);
+            if (this.log && U.rnd() < 0.5) this.say('tackle', icp ? `${this.pname(icp)} прерывает передачу ${this.pname(passer)} — атаку приходится начинать заново, а соперник готовит ответный выпад.` : `${this.pname(passer)} ошибается с передачей — соперник готовит ответный выпад.`, icp ? OTHER(side) : side);
           } else {
             const v = this.passCharge(passer, c[1]);
             me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
@@ -605,7 +605,7 @@
         if (me.pressure >= 100) {
           me.st.wins++;
           const p = this.pickPlayer(side, 'tac', ph);
-          if (p) p.m.perf += 0.15;
+          if (p) p.m.perf += 0.1 + Math.max(0, p.a.tac - 11) * 0.02;   // мастер отбора получает за отбор больше
           fx.push({ k: 'event', text: 'ОТБОР!' });
           const holders = this.withTrait(aSide, 'holder');
           if (holders.length && U.rnd() < 0.6) {
@@ -639,19 +639,23 @@
       const diff = this.pa(p, attr) * this.fatF(p) - dv;
       const tr = attr === 'dri' ? (TRAITS.has(p, 'dribbler') ? 0.05 : 0) + (TRAITS.has(p, 'flair') ? 0.03 : 0) : (TRAITS.has(p, 'runner') ? 0.03 : 0);
       const missP = U.clamp(0.2 - diff * 0.025 - tr + (TRAITS.has(def, 'hard') || TRAITS.has(def, 'clean') ? 0.03 : 0), 0.05, 0.5);
+      // рывок и обводка стоят сил: атакующему — больше, защитнику в единоборстве — меньше
+      this.tire(p, attr === 'pac' ? 2 : 1.5);
+      if (def) this.tire(def, attr === 'pac' ? 0.8 : 0.5);
       const what = attr === 'dri' ? ['обыгрыш', 'Потеря при обводке', 'теряет мяч в обводке', 'обыгрывает защитника'] : ['прорыв', 'Упёрся в защитника', 'упирается в защитника', 'прорывается за спину защитникам'];
       if (U.rnd() < missP) {
         p.m.perf -= 0.05;
-        if (def) def.m.perf += 0.06;   // защитник выиграл дуэль
+        if (def) def.m.perf += 0.05 + Math.max(0, def.a[oppAttr] - 11) * 0.035;   // защитник выиграл дуэль: у мастера отбора — чистый отбор, оценка растёт сильнее
         this.chainMark(side, p, 'miss');
         opp.counterCharge = Math.min(70, opp.counterCharge + 4 + U.rnd() * 5);
         if (rp >= 3) { const lost = Math.min(me.shotCharge, 5 + U.rnd() * 5); me.shotCharge -= lost; }
         fx.push({ k: 'charge', t: attr === 'dri' ? 2 : 3, text: what[1] });
-        if (this.log && rp >= 2 && U.rnd() < 0.35) this.say('tackle', def ? `${this.pname(def)} ${attr === 'dri' ? 'отбирает мяч у' : 'догоняет и останавливает'} ${this.pname(p)} — соперник может ответить.` : `${this.pname(p)} ${what[2]} — соперник может ответить.`, OTHER(side));
+        if (this.log && rp >= 2 && U.rnd() < 0.35) this.say('tackle', def ? `${this.pname(def)} ${attr === 'dri' ? 'не даёт обыграть себя, и атака' : 'догоняет'} ${this.pname(p)}${attr === 'dri' ? ' захлёбывается' : ' и гасит рывок'} — соперник копит силы для ответа.` : `${this.pname(p)} ${what[2]} — соперник может ответить.`, OTHER(side));
         return false;
       }
       p.m.perf += 0.04;
-      if (def) def.m.perf -= 0.015;   // защитника обыграли (обводка — не всегда вина защитника)
+      if (def) this.beaten = { side: OTHER(side), def, p, mv: this.moveNo };   // обыгранный защитник может пойти на фол
+      if (def) def.m.perf -= 0.02 + Math.max(0, 13 - def.a[oppAttr]) * 0.012;   // защитника обыграли: слабому в этом компоненте — больнее
       if (rp >= 3) {
         const v = U.clamp((2.5 + diff * 0.8) * Math.min(1.5, 0.7 + n * 0.15) * this.fatF(p), 2, 12);
         me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
@@ -660,6 +664,11 @@
         if (this.log && v >= 6 && U.rnd() < 0.4) this.say('advance', def ? `${this.pname(p)} ${attr === 'dri' ? 'обыгрывает' : 'убегает от'} ${this.pname(def)}!` : `${this.pname(p)} ${what[3]}!`, side);
       }
       return true;
+    }
+    /* Дополнительная трата сил за индивидуальное действие (с учётом Выносливости, черт и погоды) */
+    tire(p, k) {
+      if (!p || !p.m) return;
+      p.m.fit = Math.max(5, p.m.fit - k * this.wx.drain * this.pm(p, 'drain') * (1.45 - p.a.sta / 20 * 0.9) * (24 / this.H));
     }
     chainMark(side, p, flag) { const ch = this.chain[side]; for (let i = ch.length - 1; i >= 0; i--) if (ch[i].p === p) { ch[i][flag] = true; return; } }
     chainAdd(side, p, attr) {
@@ -709,8 +718,10 @@
       const me = this.t[side], aSide = OTHER(side), opp = this.t[aSide];
       me.st.fouls++;
       const list = me.onPitch.filter(x => x.p && x.slot.role !== 'GK');
-      const fouler = U.pickWeighted(list, x => (TAC.ROLES[x.slot.role].w[ph] + 0.05) * (22 - this.pa(x.p, 'tac')) * (22 - this.pa(x.p, 'com')) * this.pm(x.p, 'foulW') * (x.p.m.hot || 1) * (x.p.m.temK || 1)).p;
-      const victim = this.pickPlayer(aSide, 'dri', PHASE(this.rp(aSide)));
+      const bt = this.beaten && this.beaten.side === side && this.moveNo - this.beaten.mv <= 1 && !this.beaten.def.m.off && !this.beaten.p.m.off ? this.beaten : null;
+      const fouler = U.pickWeighted(list, x => (TAC.ROLES[x.slot.role].w[ph] + 0.05) * (22 - this.pa(x.p, 'tac')) * (22 - this.pa(x.p, 'com')) * this.pm(x.p, 'foulW') * (x.p.m.hot || 1) * (x.p.m.temK || 1) * (bt && x.p === bt.def ? 5 : 1)).p;
+      const victim = bt && opp.onPitch.some(x => x.p === bt.p) && U.rnd() < 0.75 ? bt.p : this.pickPlayer(aSide, 'dri', PHASE(this.rp(aSide)));
+      this.beaten = null;
       me.pressure = 0;
       ctx.stopped = true;
       fx.push({ k: 'event', text: 'ФОЛ!' });
