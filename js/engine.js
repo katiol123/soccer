@@ -152,6 +152,7 @@
       this.board = new BOARD.Board(8, this.rng);
       this.board.fill();
       this.ball = 2; this.poss = 'home'; this.mom = 0;
+      this.chain = { home: [], away: [] };
       this.counter = null; this.setPiece = null;
       this.half = 1; this.moveInHalf = 0;
       this.added = [U.randInt(1, 2), U.randInt(1, 4)];
@@ -378,7 +379,13 @@
         g *= mult * aM * shieldF * directF;
         gain += g; me.st.passes += c[1];
         fx.push({ k: 'gain', t: 1, v: g, text: '+' + Math.round(g) + ' пас' });
-        this.credit(side, 'pas', ph, 0.02 * c[1]);
+        const passer = this.credit(side, 'pas', ph, 0.02 * c[1]);
+        // у чужой штрафной точный пас выводит партнёра на удар: заряд момента растёт (неточный — сбивает)
+        if (passer && rp >= 3) {
+          const v = this.passCharge(passer, c[1]);
+          me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
+          if (Math.abs(v) >= 2) fx.push({ k: 'charge', t: 1, text: v > 0 ? `+${Math.round(v)} передача под удар` : `${Math.round(v)} неточный пас` });
+        }
       }
       if (c[2]) { // Дриблинг
         let g = this.tmul(side, 'dri') * CFG.base.dri * c[2] * R(this.val(side, 'dri', ph), this.val(OTHER(side), 'tac', dph)) * (plan === 'wings' ? 1.2 : 1);
@@ -596,12 +603,39 @@
     credit(side, attr, phase, amount) {
       const p = this.pickPlayer(side, attr, phase);
       if (p) p.m.perf += amount;
+      // участники розыгрыша: кто продвигал мяч в текущей атаке (из них выбирается автор передачи под удар)
+      if (p && this.poss === side && (attr === 'pas' || attr === 'dri' || attr === 'pac')) this.chainAdd(side, p, attr);
       return p;
+    }
+    chainAdd(side, p, attr) {
+      const ch = this.chain[side];
+      ch.push({ p, attr, mv: this.moveNo });
+      if (ch.length > 5) ch.shift();
+    }
+    /* Автор передачи под удар: последний участник атаки — главный кандидат; чем выше Пас, тем вероятнее */
+    provider(side, shooter, kind) {
+      const onP = new Set(this.t[side].onPitch.filter(x => x.p).map(x => x.p));
+      const ch = this.chain[side].filter(e => e.p !== shooter && onP.has(e.p) && !e.p.m.off && this.moveNo - e.mv <= 6);
+      if (!ch.length) return null;
+      const n = ch.length;
+      return U.pickWeighted(ch, e => {
+        const i = ch.indexOf(e), rec = Math.pow(0.5, n - 1 - i);
+        const kindK = e.sp ? 3 : e.attr === 'pas' ? 1.25 : e.attr === 'dri' ? 1 : 0.8;
+        const cross = kind === 'header' && TRAITS.has(e.p, 'crosser') ? 1.6 : 1;
+        return rec * kindK * cross * Math.pow(this.pa(e.p, 'pas'), 1.5) * this.pm(e.p, 'assistW');
+      }).p;
+    }
+    /* Передача под удар: в последней трети поля точный пас заряжает шкалу «к моменту» (заряд удара) */
+    passCharge(p, n) {
+      let b = (this.pa(p, 'pas') - 10) * 1.1 * Math.min(1.6, 0.7 + n * 0.15);
+      if (TRAITS.has(p, 'vision')) b += 3;
+      return U.clamp(b, -8, 16);
     }
 
     turnover(newSide, reason, fx) {
       const nt = this.t[newSide], ot = this.t[OTHER(newSide)];
       this.poss = newSide;
+      this.chain.home = []; this.chain.away = [];   // атака закончилась — новый розыгрыш с нуля
       this.mom = nt.counterCharge;
       nt.counterCharge = 0;
       nt.pressure = 0; ot.pressure = 0;
@@ -719,6 +753,8 @@
       const me = this.t[side], opp = this.t[OTHER(side)];
       const shooter = forced || this.pickShooter(side, kind);
       if (!shooter) return;
+      const prov = kind === 'fk' || kind === 'pen' ? null : this.provider(side, shooter, kind);
+      this._shotProv = prov;
       const gk = this.gkVal(OTHER(side));
       let q;
       if (kind === 'box') q = CFG.boxShot + CFG.boxShotPerGem * (n - 3);
@@ -767,6 +803,12 @@
       if (U.rnd() < cornerP) {
         me.st.corners++;
         this.setPiece = { side, type: 'corner', created: this.moveNo };
+        // угловой подаёт лучший исполнитель навесов — он и автор передачи, если замкнут
+        const takers = me.onPitch.filter(x => x.p && x.slot.role !== 'GK').map(x => x.p);
+        const taker = takers.sort((a, b) => (this.pa(b, 'pas') + (TRAITS.has(b, 'crosser') ? 3 : 0) + (TRAITS.has(b, 'setpiece') ? 2 : 0)) - (this.pa(a, 'pas') + (TRAITS.has(a, 'crosser') ? 3 : 0) + (TRAITS.has(a, 'setpiece') ? 2 : 0)))[0];
+        this.chain[side] = taker ? [{ p: taker, attr: 'pas', mv: this.moveNo, sp: true }] : [];
+        // качество подачи: мастер навесов заряжает момент сильнее
+        if (taker) me.shotCharge = U.clamp(me.shotCharge + (this.pa(taker, 'pas') - 10) * 1.5 + (TRAITS.has(taker, 'crosser') ? 6 : 0), 0, 100);
         me.shotCharge = 20 + (me.tac.plan === 'wings' ? 15 : 0) + this.tadd(side, 'cornerCharge');
         this.ball = side === 'home' ? 4 : 0;
         opp.pressure = 0;
@@ -786,13 +828,21 @@
       this.score[side]++; me.st.goals++;
       scorer.m.goals++; scorer.m.perf += 1.1;
       let assist = null;
-      if (kind !== 'pen' && kind !== 'fk' && U.rnd() < 0.78) {
-        const list = me.onPitch.filter(x => x.p && x.p !== scorer && x.slot.role !== 'GK');
-        if (list.length) {
-          assist = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w.front + 0.1, 1.5) * Math.pow(this.pa(x.p, kind === 'header' ? 'pas' : U.pick(['pas', 'dri'])), 2) * this.pm(x.p, 'assistW')).p;
-          assist.m.assists++; assist.m.perf += 0.55;
+      if (kind !== 'pen' && kind !== 'fk') {
+        // ассист — у автора передачи из этого розыгрыша; чем точнее его пас, тем чаще гол засчитывают как его передачу
+        const pr = this._shotProv;
+        if (pr && pr !== scorer && !pr.m.off) {
+          const ch = U.clamp(0.6 + (this.pa(pr, 'pas') - 10) * 0.03, 0.45, 0.92) * (kind === 'long' || kind === 'vlong' ? 0.6 : 1);
+          if (U.rnd() < ch) assist = pr;
         }
+        // иначе — подбор, рикошет, скидка: иногда передачу всё же записывают на кого-то из партнёров
+        if (!assist && U.rnd() < 0.3) {
+          const list = me.onPitch.filter(x => x.p && x.p !== scorer && x.slot.role !== 'GK');
+          if (list.length) assist = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w.front + 0.1, 1.5) * Math.pow(this.pa(x.p, 'pas'), 2) * this.pm(x.p, 'assistW')).p;
+        }
+        if (assist) { assist.m.assists++; assist.m.perf += 0.55; }
       }
+      this._shotProv = null;
       opp.onPitch.forEach(x => { if (x.p && (x.slot.role === 'GK' || x.slot.role === 'CB')) x.p.m.perf -= 0.15; });
       const g = { side, min: this.minuteLabel(), scorer: scorer.name, scorerId: scorer.id, assist: assist ? assist.name : null, assistId: assist ? assist.id : null, kind };
       this.goals.push(g);
