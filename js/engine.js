@@ -43,10 +43,10 @@
   /* Домашнее преимущество: чем полнее и больше арена, тем сильнее поддержка (нейтральное поле — 0).
      Делится поровну: хозяева атакуют сильнее, гости — слабее, общее число голов почти не меняется */
   function homeK(env) {
-    if (!env) return 1.1;
+    if (!env) return 1.07;
     if (env.neutral) return 1;
     const loud = U.clamp(0.6 + (env.cap || 30) / 100, 0.6, 1.25);
-    return 1 + 0.01 + 0.12 * (env.fill == null ? 0.9 : env.fill) * loud;
+    return 1 + 0.08 * (env.fill == null ? 0.9 : env.fill) * loud;
   }
   const PRESS_M = [0.82, 1, 1.2], PRESS_DRAIN = [0.8, 1, 1.3];
 
@@ -86,6 +86,21 @@
       p.m.hot = mood < 35 && tem >= 12 ? 1 + (tem - 11) * 0.08 : 1;          // обиженный вспыльчивый чаще фолит
       p.m.temK = 1 + (tem - 10) * 0.02;                                          // темперамент: ±20% к фолам у крайних значений
     }
+    /* Реплики о трибунах: в начале матча и изредка по ходу */
+    crowdSay() {
+      if (!this.log || !this.env || this.env.neutral) return;
+      const c = this.crowd, H = this.t.home.club.name;
+      if (!this._crowdSaid) {
+        this._crowdSaid = true;
+        const t = c >= 1.05 ? `Аншлаг! Стадион «${H}» ревёт — гостям здесь будет очень непросто.` : c >= 0.75 ? `Трибуны почти полны и заряжены — хозяевам есть на кого опереться.` : this.boo > 0 ? `Полупустой стадион, тишина... Болельщики «${H}» проголосовали ногами — и свистят своим.` : `Трибуны заполнены не до конца — атмосфера сдержанная.`;
+        this.say('info', t, 'home');
+        return;
+      }
+      if (U.rnd() < 0.03) {
+        if (c >= 0.9) this.say('info', U.pick(['Стадион поёт, не умолкая ни на секунду.', 'Гул трибун давит на гостей — они спешат и ошибаются.', 'Болельщики встают со своих мест — хозяева прибавляют.']), 'home');
+        else if (this.boo > 0.4) this.say('info', U.pick(['С трибун доносится свист — игроки «' + H + '» нервничают.', 'Пустые ряды и редкие аплодисменты — поддержки не чувствуется.']), 'home');
+      }
+    }
     /* Командный множитель фолов: темперамент игроков на поле и обиженные вспыльчивые */
     hotK(side) { const ps = this.t[side].onPitch.filter(x => x.p); return ps.length ? ps.reduce((a, x) => a + (x.p.m.hot || 1) * (x.p.m.temK || 1), 0) / ps.length : 1; }
     /* Самоотдача без мяча (отбор, позиционная игра): счастливые бьются, обиженные «выключаются» при плохом счёте */
@@ -109,6 +124,9 @@
       // давление трибун (0 — пусто или нейтральное поле, ~1 — ревущий аншлаг на большой арене)
       // нарастает к аншлагу: полупустые трибуны почти не давят, ревущий полный стадион — сильно
       this.crowd = crowdOf(this.env);
+      // свист пустых трибун: ниже половины заполнения хозяевам самим неуютно
+      const fill0 = this.env && !this.env.neutral && this.env.fill != null ? this.env.fill : 1;
+      this.boo = fill0 < 0.5 ? (0.5 - fill0) * 4 : 0;
       this.t = {
         home: new TeamState('home', cfg.home.club, cfg.home.tactics, cfg.home.ctrl),
         away: new TeamState('away', cfg.away.club, cfg.away.tactics, cfg.away.ctrl)
@@ -197,7 +215,7 @@
       if (this.wx.attr[k]) v += this.wx.attr[k];
       if (p.m && (k === 'tac' || k === 'pos')) v += this.effort(p);
       // трибуны давят на гостей: хладнокровие падает; хозяев поддерживают
-      if (p.m && k === 'com') v += p.m.side === 'away' ? -this.crowd * 1.8 : this.crowd * 0.5;
+      if (p.m && k === 'com') v += p.m.side === 'away' ? -this.crowd * 3.2 : this.crowd * 0.8 - this.boo;
       return U.clamp(v, 1, 22);
     }
     /* Командный множитель (произведение по игрокам на поле) */
@@ -297,7 +315,8 @@
       const ctx = { side, critical: false, shotTaken: false, stopped: false };
       // «решающий момент» — критический ход зависит от хладнокровия
       const comV = this.val(side, 'com', side === this.poss ? PHASE(this.rp(side)) : PHASE(this.rp(side)));
-      if (U.rnd() < comV / 170 + this.tadd(side, 'crit') + (side === 'home' ? 0.015 : -0.015) * this.crowd) { ctx.critical = true; }
+      if (U.rnd() < comV / 170 + this.tadd(side, 'crit') + (side === 'home' ? 0.03 : -0.03) * this.crowd) { ctx.critical = true; }
+      this.crowdSay();
       this.t[this.poss].st.poss++;
       const stepFx = [];
       for (const step of res.steps) {
@@ -494,7 +513,7 @@
         const tacV = this.val(side, 'tac', ph), comV = this.val(side, 'com', ph);
         let fp = CFG.foulBase * (c[4] / 3) * (1 + (11 - tacV) / 14) * (1 + (11 - comV) / 20) * [0.8, 1, 1.25][me.tac.pressing];
         if (step.groups.some(g => g.t === 4 && g.size >= 4)) fp *= 1.8;
-        fp *= this.tmul(side, 'foul') * this.tmul(aSide, 'oppFoul') * this.hotK(side) * (side === 'away' ? 1 + 0.2 * this.crowd : 1);
+        fp *= this.tmul(side, 'foul') * this.tmul(aSide, 'oppFoul') * this.hotK(side) * (side === 'away' ? 1 + 0.35 * this.crowd : 1);
         if (U.rnd() < U.clamp(fp, 0, 0.4)) {
           this.foul(side, ph, fx, ctx);
           return;
@@ -593,7 +612,7 @@
       fx.push({ k: 'event', text: 'ФОЛ!' });
       const arp = this.rp(aSide);
       let card = null;
-      const cardP = 0.3 + (10 - this.pa(fouler, 'com')) * 0.015 + (arp >= 3 ? 0.1 : 0) + (this.counter && this.counter.side === aSide ? 0.15 : 0) + this.padd(fouler, 'cardP') + ((fouler.m.hot || 1) - 1) * 0.15 + (fouler.m.side === 'away' ? 0.06 : -0.03) * this.crowd; // судья под давлением трибун
+      const cardP = 0.3 + (10 - this.pa(fouler, 'com')) * 0.015 + (arp >= 3 ? 0.1 : 0) + (this.counter && this.counter.side === aSide ? 0.15 : 0) + this.padd(fouler, 'cardP') + ((fouler.m.hot || 1) - 1) * 0.15 + (fouler.m.side === 'away' ? 0.1 : -0.05) * this.crowd; // судья под давлением трибун
       if (U.rnd() < 0.012 * this.pm(fouler, 'redP') * (fouler.m.hot || 1)) card = 'red';
       else if (U.rnd() < cardP) card = fouler.m.yc >= 1 ? 'red2' : 'yellow';
       if (this.log || card) {
@@ -604,6 +623,7 @@
       if (card === 'yellow') {
         fouler.m.yc++; me.st.yc++; fouler.m.perf -= 0.3;
         this.say('yellow', `Жёлтая карточка: ${this.pname(fouler)}.`, side, { player: fouler.name });
+        if (side === 'away' && this.crowd >= 0.75 && U.rnd() < 0.5) this.say('info', U.pick(['Трибуны неистовствуют — гости теряют самообладание.', 'Стадион ревёт, требуя карточку, — и судья не устоял.', 'Гостям тяжело: каждый их контакт встречают оглушительным свистом.']), 'home');
       } else if (card) {
         if (card === 'red2') { fouler.m.yc++; me.st.yc++; }
         fouler.m.rc = true; me.st.rc++; fouler.m.perf -= 1.5;
@@ -618,8 +638,9 @@
         this.say('injury', TRAITS.has(victim, 'glass') ? `${this.traitNote(victim, 'glass')} снова травмирован... Хрупкий, как стекло.` : `${this.pname(victim)} получает травму и хромает...`, aSide);
         this.onInjury(aSide, victim);
       }
-      if (arp === 4 && U.rnd() < 0.55 + (aSide === 'home' ? 0.1 : -0.05) * this.crowd) {
+      if (arp === 4 && U.rnd() < 0.55 + (aSide === 'home' ? 0.2 : -0.1) * this.crowd) {
         fx.push({ k: 'event', text: 'ПЕНАЛЬТИ!' });
+        if (aSide === 'home' && this.crowd >= 0.75) this.say('info', 'Трибуны взрываются — весь стадион требует пенальти!', 'home');
         this.say('penalty', `ПЕНАЛЬТИ! Судья без колебаний показывает на точку!`, aSide);
         this.dissent(side, 2, fx);
         this.pending = { type: 'penalty', side: aSide };
