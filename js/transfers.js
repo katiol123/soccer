@@ -117,12 +117,14 @@
     if (n.terms) return n.terms;
     const h = p.h || { amb: 10, loy: 10, pro: 10, tem: 10 };
     const mood = p.mood == null ? 60 : p.mood;
-    const fromT = FIN().level(from), toT = FIN().level(to);
+    // привлекательность клуба: уровень + престиж (звёзды охотнее идут в клуб с титулами)
+    const fromT = FIN().appeal(from), toT = FIN().appeal(to);
     const step = fromT - toT; // >0 — переход в клуб уровнем выше
     let w = FIN().fairWage(p) * (1 + (h.amb - 10) * 0.025) * (0.97 + U.rnd() * 0.1);
     w *= Math.max(1, p.wage / FIN().fairWage(p)) > 1.1 ? 1.08 : 1;               // не хочет терять в деньгах
     if (step >= 3) w *= 0.95; else if (step <= -3) w *= 1.12 + Math.max(0, h.amb - 12) * 0.02;
     if (mood < 35) w *= 0.92;
+    w *= 1 - (FIN().pres(to) - 50) / 500;                                          // престижный клуб — небольшая скидка
     w = Math.max(w, p.wage * 1.05);                                                 // переход — значит прибавка
     const years = p.age <= 23 ? [3, 5] : p.age <= 29 ? [2, 5] : [1, 3];
     let refuse = null;
@@ -298,7 +300,7 @@
       const budget = buyer.fin.transferBudget || 0;
       if (budget < 2) continue;
       const coach = buyer.coach, attrs = PLAN_ATTR[coach.plan] || [];
-      const bT = FIN().level(buyer);
+      const bT = FIN().appeal(buyer);
       let need = null, cands = [];
       for (const nd of needs(buyer).slice(0, 2)) {
         if (nd.gap < 0.6 && !nd.lack) continue;
@@ -316,7 +318,7 @@
             const fee = asking(st, seller, p);
             if (fee > budget) continue;
             // игрок согласится?
-            const h = p.h || {}, sT = FIN().level(seller);
+            const h = p.h || {}, sT = FIN().appeal(seller);
             if (h.loy >= 16 && (p.mood || 60) >= 55) continue;
             if (h.amb >= 15 && bT - sT >= 6) continue;
             const fit = attrs.length ? U.avg(attrs, k => p.a[k]) - 10 : 0;

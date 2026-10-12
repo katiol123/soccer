@@ -165,7 +165,8 @@
             el('div', null, [el('small', { text: 'Бюджет зарплат' }), el('b', { text: c.fin ? G.FIN.fmtW(c.fin.wageBudget) : '—' })]),
             el('div', null, [el('small', { text: 'Стоимость состава' }), el('b', { text: G.FIN.fmtM(G.FIN.squadValue(c)) })]),
             el('div', null, [el('small', { text: 'Стадион' }), el('b', { text: Math.round((c.cap || G.FIN.CAPACITY[c.id] || 30) * 1000).toLocaleString('ru') + ' мест' })]),
-            c.own ? el('div', { title: G.FIN.ownerLabel(c)[1] }, [el('small', { text: 'Владелец' }), el('b', { text: G.FIN.ownerLabel(c)[0] })]) : null
+            c.own ? el('div', { title: G.FIN.ownerLabel(c)[1] }, [el('small', { text: 'Владелец' }), el('b', { text: G.FIN.ownerLabel(c)[0] })]) : null,
+            el('div', null, [el('small', { text: 'Престиж' }), el('b', { text: `${Math.round(G.FIN.pres(c))} · ${G.FIN.presLabel(G.FIN.pres(c))}` })])
           ]),
           el('div.cd-coach', null, [el('small', { text: 'Нынешний тренер (уступит вам место)' }), el('b', { text: `${c.coach.name} (${c.coach.nat})` }), el('p', { text: c.coach.motto }),
             el('div.cd-tags', null, [el('span', { text: c.coach.formations.join(' / ') }), el('span', { text: TAC.PLANS[c.coach.plan].icon + ' ' + TAC.PLANS[c.coach.plan].n })])]),
@@ -424,9 +425,26 @@
       return el('div.env-line', null, [
         el('span', { title: wx.d, text: `${wx.i} ${wx.n}` }),
         el('span', { text: `🏟 ~${fans} зрителей (${Math.round(env.fill * 100)}%)` }),
+        !env.neutral && env.tp ? el('span', { title: 'Цена билета хозяев (множитель к базовой цене клуба)', text: `🎟 £${Math.round(G.FIN.ticket(LEAGUE.club(this.st, f.h)) * (f.cup ? 0.85 : 1) * env.tp)} (×${env.tp})` }) : null,
         el('span', { title: 'Домашнее преимущество зависит от заполняемости и размера стадиона', text: env.neutral ? '⚖ нейтральное поле' : `📣 поддержка хозяев: +${hk}% к атаке` }),
         env.weather !== 'clear' ? el('small.muted', { text: wx.d }) : null
       ]);
+    },
+
+    /* Цена билетов на домашний матч: прогноз заполняемости, выручки и поддержки по каждому варианту */
+    priceBox(f, redraw) {
+      const st = this.st, env = LEAGUE.matchEnv(st, f), opts = G.FIN.pricing(st, f);
+      const box = el('div.price-box', null, [el('div.pb-h', null, [el('b', { text: '🎟 Цена билетов на матч' }), el('small.muted', { text: `важность матча для болельщиков: ${Math.round((env.imp || 0) * 100)}% · ${f.cup ? 'в кубке выручка делится 55/45' : 'дороже — больше денег, но меньше зрителей и слабее поддержка'}` })])]);
+      const row = el('div.pb-row');
+      opts.forEach(o => {
+        const hk = Math.round((Math.sqrt(o.homeK) - 1) * 1000) / 10;
+        row.appendChild(el('button.pb-opt' + (o.m === env.tp ? '.on' : ''), { onclick: () => { G.FIN.setPrice(st, f, o.m); LEAGUE.save(st); redraw(); } }, [
+          el('b', { text: `£${o.price}` }), el('small', { text: `×${o.m}` }),
+          el('span', { text: `${Math.round(o.fill * 100)}% трибун` }), el('span', { text: `${G.FIN.fmtM(o.rev)}` }), el('span.muted', { text: `+${hk}% атаки` })
+        ]));
+      });
+      box.appendChild(row);
+      return box;
     },
 
     /* Кубковые матчи недели на главной: свой матч и самые громкие пары */
@@ -602,6 +620,7 @@
       ]);
       root.appendChild(header);
       root.appendChild(this.envLine(f));
+      if (f.h === st.userClub && !f.neutral) root.appendChild(this.priceBox(f, () => this.prematch(f)));
       const body = el('div.pm-body');
       const mine = el('div.card.pm-mine', null, [el('h3', { text: 'Ваша тактика' })]);
       const myTac = this.userTac(f);
@@ -1330,12 +1349,23 @@
         kpi('Баланс клуба', G.FIN.fmtM(f.balance), `${income + expense >= 0 ? '+' : ''}${(income + expense).toFixed(1)} млн за сезон`, f.balance < 0 ? 'neg' : ''),
         kpi('Зарплатная ведомость', `£${bill} тыс./нед`, `бюджет £${f.wageBudget} тыс. · ${G.FIN.yearly(bill).toFixed(0)} млн/год`, bill > f.wageBudget ? 'neg' : ''),
         kpi('Стоимость состава', G.FIN.fmtM(G.FIN.squadValue(club)), `${club.players.length} игроков`),
-        kpi('Стадион', Math.round((club.cap || G.FIN.CAPACITY[club.id] || 30) * 1000).toLocaleString('ru') + ' мест', `билет ~£${Math.round(G.FIN.ticket(club))}`),
+        kpi('Стадион', Math.round((club.cap || G.FIN.CAPACITY[club.id] || 30) * 1000).toLocaleString('ru') + ' мест', `базовая цена билета ~£${Math.round(G.FIN.ticket(club))}`),
+        kpi('⭐ Престиж', `${Math.round(G.FIN.pres(club))} · ${G.FIN.presLabel(G.FIN.pres(club))}`, 'растёт от трофеев, мест выше ожиданий, повышений и кубка; влияет на спонсоров, спрос на билеты, интерес игроков и академию'),
         kpi(G.FIN.ownerLabel(club)[0], `${G.FIN.fmtM(f.ownLeft || 0)} из ${G.FIN.fmtM(G.FIN.ownerCap(club))}`, `столько владелец ещё готов вложить в этом сезоне — ${G.FIN.ownerLabel(club)[1]}`),
         f.embargo ? kpi('⛔ Запрет на регистрацию', 'Долг ' + G.FIN.fmtM(-f.balance), `снимут, когда долг станет меньше ${G.FIN.fmtM(G.FIN.debtLimit(club) / 2)}; внешнее управление — при долге ${G.FIN.fmtM(G.FIN.debtLimit(club) * 3)}`, 'neg') : null,
         f.para ? kpi('«Парашют»', G.FIN.fmtM(f.para[0]) + ' в этом сезоне', f.para.length > 1 ? `ещё ${f.para.slice(1).map(v => '£' + v + ' млн').join(', ')} в следующих` : 'последний год выплат', 'ok') : null
       ]);
       wrap.appendChild(kpis);
+      if (own) {
+        const seg = el('div.seg.wrap');
+        G.FIN.PRICES.forEach(m => seg.appendChild(el('button' + (m === (st.ticketM || 1) ? '.on' : ''), { text: `×${m} · £${Math.round(G.FIN.ticket(club) * m)}`, onclick: () => {
+          st.ticketM = m;
+          LEAGUE.weekFixtures(st).forEach(fx => { if (!fx.res && fx.h === club.id && fx.env && !fx.neutral) G.FIN.setPrice(st, fx, m); });
+          LEAGUE.save(st); this.hub('finance');
+        } })));
+        wrap.appendChild(el('div.card.price-default', null, [el('h3', { text: '🎟 Цена билетов по умолчанию' }),
+          el('p.muted', { text: 'Дорогие билеты приносят больше денег, но часть болельщиков останется дома — поддержка трибун и домашнее преимущество слабеют. Престижному клубу и в важных матчах болельщики прощают высокие цены. Перед каждым домашним матчем цену можно изменить с прогнозом заполняемости и выручки.' }), seg]));
+      }
       const grid = el('div.fin-grid');
       // доходы и расходы
       const led = el('div.card', null, [el('h3', { text: `Сезон ${st.seasonName}: доходы и расходы` })]);
@@ -1506,7 +1536,7 @@
       } else {
         const c = club.coach;
         wrap.appendChild(el('div.card.coach-card', null, [UI.crest(club, 64), el('div', null, [el('h3', { text: club.name }), el('b', { text: `Тренер: ${c.name} (${c.nat})` }), el('p', { text: c.motto }),
-          el('div.cd-tags', null, [el('span', { text: 'Схемы: ' + c.formations.join(', ') }), el('span', { text: TAC.PLANS[c.plan].icon + ' ' + TAC.PLANS[c.plan].n }), el('span', { text: 'Менталитет ' + TAC.MENTALITY[Math.round(c.mentality)] }), el('span', { text: 'Прессинг ' + TAC.PRESSING[Math.round(c.pressing)] }), el('span', { text: 'Гибкость ' + Math.round(c.adapt * 100) + '%' }), el('span', { text: 'Мастерство ' + Math.round(c.skill * 100) + '%' })])])]));
+          el('div.cd-tags', null, [el('span', { text: `⭐ Престиж ${Math.round(G.FIN.pres(club))} · ${G.FIN.presLabel(G.FIN.pres(club))}` }), el('span', { text: 'Схемы: ' + c.formations.join(', ') }), el('span', { text: TAC.PLANS[c.plan].icon + ' ' + TAC.PLANS[c.plan].n }), el('span', { text: 'Менталитет ' + TAC.MENTALITY[Math.round(c.mentality)] }), el('span', { text: 'Прессинг ' + TAC.PRESSING[Math.round(c.pressing)] }), el('span', { text: 'Гибкость ' + Math.round(c.adapt * 100) + '%' }), el('span', { text: 'Мастерство ' + Math.round(c.skill * 100) + '%' })])])]));
       }
       wrap.appendChild(this.squadTable(club));
       body.appendChild(wrap);

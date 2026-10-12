@@ -27,8 +27,10 @@
       const n = 2 + (U.rnd() < 0.45 ? 1 : 0);
       for (let i = 0; i < n; i++) {
         const pos = U.pickWeighted(['GK', 'DF', 'MF', 'FW'], x => ({ GK: 0.6, DF: 1.6, MF: 1.6, FW: 1.2 })[x] / Math.max(1, c.players.filter(p => p.pos === x).length - (x === 'GK' ? 1 : 5)));
-        const gem = U.rnd() < 0.06;
-        const q = c.str - 2.6 + U.rnd() * 1.8 + (gem ? 2.5 : 0);
+        // престиж привлекает в академию талантливых детей
+        const pr = FIN().pres(c);
+        const gem = U.rnd() < 0.06 * (0.6 + pr / 100);
+        const q = c.str - 2.6 + (pr - 50) / 40 + U.rnd() * 1.8 + (gem ? 2.5 : 0);
         const age = U.randInt(17, 18);
         const p = G.DATA.makePlayer(c, pos, q, age, Math.random, used, c.id + '_ac' + st.season + '_' + Math.floor(Math.random() * 1e7), freeNum(c), false);
         p.academy = c.id;
@@ -140,7 +142,7 @@
       if (FIN().wageBill(c) + wage > c.fin.wageBudget) return { ok: false, msg: 'Совет не одобрит: превышен бюджет зарплат.' };
       if (FIN().embargo(c) && wage > FIN().EMB_WAGE) return { ok: false, msg: `Запрет на регистрацию: лига разрешает подписывать только свободных агентов с зарплатой до £${FIN().EMB_WAGE} тыс./нед.` };
       const h = p.h || { amb: 10 };
-      if (h.amb >= 16 && TAC.overall(p) >= 16 && FIN().level(c) >= 14 && d.idle < 10) return { ok: false, msg: `${p.name} ждёт предложений от клубов посильнее.` };
+      if (h.amb >= 16 && TAC.overall(p) >= 16 && FIN().appeal(c) >= 14 && d.idle < 10) return { ok: false, msg: `${p.name} ждёт предложений от клубов посильнее.` };
       p.faTries = (p.faTries == null ? 2 : p.faTries);
       if (wage < d.wage * 0.95) {
         p.faTries--;

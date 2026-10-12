@@ -16,6 +16,39 @@
     const L = G.DATA && G.DATA.LEAGUES[club.league];
     return ((L ? L.tier : 1) - 1) * 20 + ((club.fin && club.fin.target) || 10);
   }
+  /* ---------- престиж клуба (1..99) ----------
+     Растёт от трофеев, высоких мест, повышений и кубка; падает от провалов, вылета, внешнего управления.
+     «Статус» — денежная сила бренда: спонсоры, базовая цена билета, спрос на матчи */
+  function presOf(str) { return U.clamp(Math.round(50 + (str - 10.5) * 12), 2, 98); }
+  function pres(c) { return c.pres == null ? presOf(c.str) : c.pres; }
+  function status(c) { return 10.5 + (pres(c) - 50) / 12; }
+  function presLabel(p) { return p >= 85 ? 'Гранд' : p >= 68 ? 'Большой клуб' : p >= 48 ? 'Крепкий клуб' : p >= 30 ? 'Скромный клуб' : 'Маленький клуб'; }
+  /* Привлекательность для игроков: уровень клуба с поправкой на престиж (меньше — привлекательнее) */
+  function appeal(c) { return level(c) - (pres(c) - 50) / 8; }
+  const PRES_BASE = [62, 32, 16];
+  /* Итоги сезона для престижа всех клубов */
+  function prestigeSeason(st, tables, sum) {
+    const changes = {};
+    tables.forEach(tbl => tbl.forEach((r, i) => {
+      const c = st.clubs.find(x => x.id === r.id);
+      if (!c || !c.fin) return;
+      const t = tierOf(c), N = tbl.length, pos = i + 1, before = pres(c);
+      let d = ((c.fin.target || pos) - pos) * 0.5 * 20 / N;
+      if (pos === 1) d += t === 1 ? 8 : 4;
+      if (t === 1 && pos <= 4) d += 2;
+      if (sum && sum.promoted.some(x => x.id === c.id)) d += 5;
+      if (sum && sum.relegated.some(x => x.id === c.id)) d -= 6;
+      if (st.cup && st.cup.season === st.season && G.CUP) {
+        if (st.cup.winner === c.id) d += 6; else if (st.cup.runnerUp === c.id) d += 2; else if (G.CUP.reached(st, c.id) >= 4) d += 1;
+      }
+      if (c.fin.embargo) d -= 1;
+      d += (PRES_BASE[Math.min(2, t - 1)] - before) * 0.05;
+      c.pres = U.clamp(Math.round((before + d) * 10) / 10, 1, 99);
+      changes[c.id] = c.pres - before;
+    }));
+    const me = st.userClub && st.clubs.find(c => c.id === st.userClub);
+    if (me) { const d = changes[me.id] || 0; st.news.push({ r: 0, text: `⭐ Престиж «${me.name}»: ${Math.round(me.pres)} (${d >= 0 ? '+' : ''}${d.toFixed(1)}) — ${presLabel(me.pres).toLowerCase()}. Престиж влияет на спонсоров, спрос на билеты и интерес игроков.` }); }
+  }
 
   /* ---------- игрок ---------- */
   function ageK(age) {
@@ -58,7 +91,7 @@
   /* Хочет ли амбициозный игрок в клуб уровнем выше */
   function outgrown(p, club) {
     const h = p.h || {};
-    return (h.amb || 10) >= 14 && TAC.overall(p) >= clubCore(club) + 1 && level(club) > 6;
+    return (h.amb || 10) >= 14 && TAC.overall(p) >= clubCore(club) + 1 && appeal(club) > 6;
   }
   function moodLabel(m) {
     return m >= 80 ? ['Счастлив', '😄'] : m >= 60 ? ['Доволен', '🙂'] : m >= 40 ? ['Нейтрален', '😐'] : m >= 20 ? ['Недоволен', '😒'] : ['Хочет уйти', '😠'];
@@ -130,8 +163,8 @@
   }
   const yearly = w => w * 52 / 1000;                                              // тыс./нед → млн/год
   function squadValue(club) { return Math.round(U.sum(club.players, value)); }
-  function ticket(club) { return Math.max(12, (40 + (club.str - 10) * 10) * lgFin(club).ticketK); }    // £ за билет
-  function commercial(club) { return 12 * Math.exp(0.65 * (club.str - 10)) * lgFin(club).commK; }       // млн/сезон
+  function ticket(club) { return Math.max(12, (40 + (status(club) - 10) * 10) * lgFin(club).ticketK); }    // базовая цена билета, £
+  function commercial(club) { return 12 * Math.exp(0.65 * (status(club) - 10)) * lgFin(club).commK; }       // млн/сезон
   function operating(club) { return Math.max(6, 30 + (club.str - 10) * 15) * lgFin(club).opsK; }     // млн/сезон
   function para(club) { return (club.fin && club.fin.para && club.fin.para[0]) || 0; }                  // «парашют», млн/сезон
 
@@ -203,6 +236,7 @@
     c.own = rollOwner(Math.random, 8);
     c.fin.ownLeft = ownerCap(c);
     c.fin.admin = (c.fin.admin || 0) + 1;
+    c.pres = Math.max(1, pres(c) - 8);
     c.fin.embargo = true; c.fin.transferBudget = 0; c.fin.embSince = st.season + (final ? 1 : 0);
     c.players.forEach(p => { p.wage = Math.round(p.wage * 0.8); p.mood = Math.max(0, (p.mood == null ? 60 : p.mood) - 15); });
     // администраторы выставляют на продажу самых дорогих игроков
@@ -258,6 +292,7 @@
       if (c.fin.season.transfers == null) c.fin.season.transfers = 0;
       if (c.fin.season.owner == null) c.fin.season.owner = 0;
       if (!c.own) c.own = rollOwner(rng);
+      if (c.pres == null) c.pres = presOf(c.str);
       if (c.fin.ownLeft == null) c.fin.ownLeft = ownerCap(c);
     });
     if (st.userClub && !st.board) st.board = { conf: 60, target: exp[st.userClub] };
@@ -273,31 +308,67 @@
   function matchday(st, fixture, table) {
     const club = st.clubs.find(c => c.id === fixture.h);
     if (!club || !club.fin) return;
-    const att = fixture.env && fixture.env.fill != null ? fixture.env.fill : attend(st, fixture);
-    if (fixture.cup) return cupGate(st, fixture, club, st.clubs.find(c => c.id === fixture.a), att);
-    const gate = (club.cap || CAPACITY[club.id] || 30) * att * ticket(club) / 1000;
+    const env = fixture.env || (G.LEAGUE && G.LEAGUE.matchEnv(st, fixture));
+    const att = env.fill, tp = env.tp || 1;
+    if (fixture.cup) return cupGate(st, fixture, club, st.clubs.find(c => c.id === fixture.a), att, tp);
+    const gate = (club.cap || CAPACITY[club.id] || 30) * att * ticket(club) * tp / 1000;
     book(club, 'gate', Math.round(gate * 100) / 100);
     fixture.res.att = Math.round((club.cap || CAPACITY[club.id] || 30) * att * 1000);
   }
 
   /* Кубок: выручка делится между клубами (55/45, на «Уэмбли» — поровну); выезд к клубу выше классом собирает аншлаг */
-  /* Заполняемость стадиона на матч (0..1): место хозяев, статус матча, кубок, погода */
-  function attend(st, f) {
+  /* ---------- билеты: спрос и цена ----------
+     Спрос на матч (может превышать 1 — аншлаг с запасом): место хозяев, престиж обоих клубов, важность матча, кубок, погода.
+     Цена — множитель к базовой цене клуба. Дороже — больше денег за билет, но меньше зрителей и слабее поддержка */
+  const PRICES = [0.7, 0.85, 1, 1.2, 1.45, 1.75];
+  function demand(st, f, imp) {
     const H = st.clubs.find(c => c.id === f.h), A = st.clubs.find(c => c.id === f.a);
-    if (f.neutral) return U.clamp(0.8 + U.rnd() * 0.2, 0.8, 1);
-    let att;
-    if (f.cup) att = 0.72 + (tierOf(H) - tierOf(A)) * 0.1 + U.rnd() * 0.1;
+    let d;
+    if (f.cup) d = 0.7 + (tierOf(H) - tierOf(A)) * 0.12 + (f.cr || 0) * 0.04;
     else {
       const t = G.LEAGUE.standings(st, H.league), N = t.length, pos = t.findIndex(r => r.id === H.id) + 1;
-      att = 0.82 + (N - pos) * 0.008 * 20 / N + U.rnd() * 0.05 + (f.po ? 0.15 : 0);
+      d = 0.8 + (N - pos) * 0.008 * 20 / N + (f.po ? 0.2 : 0);
     }
+    d += (pres(H) - 45) / 250 + (pres(A) - 45) / 500 + imp * 0.12 + (U.rnd() - 0.5) * 0.06;
     const wx = f.env && f.env.weather;
-    att -= wx === 'snow' ? 0.08 : (wx === 'rain' || wx === 'heavy') ? 0.03 : 0;
-    return U.clamp(att, f.cup ? 0.55 : 0.65, 1);
+    d -= wx === 'snow' ? 0.08 : (wx === 'rain' || wx === 'heavy') ? 0.03 : 0;
+    return Math.max(0.35, d);
   }
-  function cupGate(st, f, H, A, att) {
+  /* Чувствительность к цене: у престижных клубов и в важных матчах болельщики готовы платить больше */
+  function elastic(H, imp) { return U.clamp(1.05 - pres(H) / 100 - imp * 0.25, 0.25, 1.2); }
+  function fillAt(env, m) { return U.clamp(env.dem * U.clamp(1 - env.k * (m - 1), 0.2, 1.6), 0.15, 1); }
+  /* Прогноз по каждой цене: заполняемость, выручка за матч, поддержка трибун */
+  function pricing(st, f) {
+    const env = G.LEAGUE.matchEnv(st, f), H = st.clubs.find(c => c.id === f.h);
+    const cap = env.cap, base = ticket(H) * (f.cup ? 0.85 : 1), share = f.cup ? 0.55 : 1;
+    return PRICES.map(m => {
+      const fill = fillAt(env, m), e = Object.assign({}, env, { fill });
+      return { m, price: Math.round(base * m), fill, rev: Math.round(cap * fill * base * m * share / 10) / 100, homeK: G.ENGINE ? G.ENGINE.homeK(e) : 1 };
+    });
+  }
+  /* Выбор цены ИИ: деньги против поддержки. Долги, запрет и скупой владелец толкают цену вверх, важный матч — вниз */
+  function aiPrice(st, f, imp) {
+    const H = st.clubs.find(c => c.id === f.h), opts = pricing(st, f);
+    let wMoney = 1 + (H.fin.balance < 0 ? 0.8 : 0) + (embargo(H) ? 0.7 : 0) + ((H.own ? H.own.w : 10) < 6 ? 0.3 : 0) + (wageBill(H) > H.fin.wageBudget ? 0.3 : 0) - (H.fin.balance > 150 ? 0.3 : 0);
+    const wSport = 0.4 + imp * 1.6;
+    const r1 = opts.find(o => o.m === 1).rev || 0.01;
+    let best = null;
+    for (const o of opts) {
+      const u = (o.rev / r1) * wMoney * 3 + (Math.sqrt(o.homeK) - 1) * 100 * wSport * 0.5 + (U.rnd() - 0.5) * 0.3;
+      if (!best || u > best.u) best = { m: o.m, u };
+    }
+    return best.m;
+  }
+  /* Установка цены (пользователь перед матчем или по умолчанию) */
+  function setPrice(st, f, m) {
+    const env = G.LEAGUE.matchEnv(st, f);
+    if (env.neutral) return env;
+    env.tp = m; env.fill = Math.round(fillAt(env, m) * 1000) / 1000;
+    return env;
+  }
+  function cupGate(st, f, H, A, att, tp) {
     const cap = f.neutral ? 90 : (H.cap || CAPACITY[H.id] || 30);
-    const price = f.neutral ? 60 : ticket(H) * 0.85;
+    const price = f.neutral ? 60 : ticket(H) * 0.85 * (tp || 1);
     const gate = Math.round(cap * att * price / 1000 * 100) / 100, hs = f.neutral ? 0.5 : 0.55;
     book(H, 'gate', gate * hs); if (A && A.fin) book(A, 'gate', gate * (1 - hs));
     f.res.att = Math.round(cap * att * 1000);
@@ -361,6 +432,8 @@
       book(c, 'prize', F.tvMerit * (tbl.length - 1 - i) + ((F.euro || [])[i] || 0));
       if (c.fin.para) { c.fin.para = c.fin.para.slice(1); if (!c.fin.para.length) c.fin.para = null; }
     }));
+    // престиж по итогам сезона
+    prestigeSeason(st, tables, sum);
     // владельцы закрывают сезон, лига проверяет долги
     ownerRound(st);
     sanctions(st, true);
@@ -494,5 +567,5 @@
   const fmtM = v => (v < 0 ? '−' : '') + '£' + Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1) + ' млн';
   const fmtW = v => '£' + Math.round(v) + ' тыс./нед';
 
-  G.FIN = { CAPACITY, EMB_WAGE, attend, cupTarget, cupStageName, cupGoalText, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
+  G.FIN = { CAPACITY, EMB_WAGE, PRICES, demand, elastic, fillAt, pricing, aiPrice, setPrice, pres, presOf, presLabel, status, appeal, prestigeSeason, cupTarget, cupStageName, cupGoalText, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
 })(typeof window !== 'undefined' ? window : globalThis);

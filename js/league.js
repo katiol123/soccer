@@ -145,8 +145,30 @@
     const P = { clear: 0.55 - 0.3 * w, rain: 0.22 + 0.08 * w, wind: 0.12, heavy: 0.03 + 0.12 * w, snow: 0.08 * w };
     const H = club(st, f.h);
     f.env = { weather: U.pickWeighted(Object.keys(P), k => P[k]), neutral: !!f.neutral, cap: f.neutral ? 90 : (H.cap || 30) };
-    f.env.fill = Math.round(G.FIN.attend(st, f) * 1000) / 1000;
+    if (f.neutral) { f.env.fill = Math.round(U.clamp(0.8 + U.rnd() * 0.2, 0.8, 1) * 1000) / 1000; f.env.tp = 1; return f.env; }
+    // спрос, чувствительность к цене и выбор цены (ИИ — сам, пользователь — цена по умолчанию, можно изменить перед матчем)
+    const imp = importance(st, f, H);
+    f.env.imp = Math.round(imp * 100) / 100;
+    f.env.dem = Math.round(G.FIN.demand(st, f, imp) * 1000) / 1000;
+    f.env.k = Math.round(G.FIN.elastic(H, imp) * 1000) / 1000;
+    const m = H.id === st.userClub ? (st.ticketM || 1) : G.FIN.aiPrice(st, f, imp);
+    G.FIN.setPrice(st, f, m);
     return f.env;
+  }
+  /* Важность матча для клуба (0..1): стадия сезона, борьба за титул/повышение/выживание, кубковый раунд, соперник */
+  function importance(st, f, c) {
+    if (f.cup) return f.neutral ? 1 : U.clamp(0.3 + (f.cr || 0) * 0.12, 0, 1);
+    if (f.po) return 1;
+    const t = standings(st, c.league), N = t.length, i = t.findIndex(r => r.id === c.id), x = st.round / Math.max(1, weeks(st) - 1);
+    const Z = (DATA.LEAGUES[c.league] || {}).zones || {}, me = t[i];
+    let imp = 0.15 + 0.35 * x;
+    const top = Z.cl || Z.up || 1;
+    if (me.pts >= t[Math.min(N - 1, top - 1)].pts - 6) imp += 0.3 * (0.4 + x);
+    if (Z.rel && i >= N - Z.rel - 3) imp += 0.3 * (0.4 + x);
+    if (Z.po && i < Z.po + 2 && i >= (Z.up || 0)) imp += 0.15 * (0.4 + x);
+    const opp = club(st, f.h === c.id ? f.a : f.h);
+    if (opp && G.FIN.pres(opp) >= 75) imp += 0.1;
+    return U.clamp(imp, 0, 1);
   }
 
   /* ---------- плей-офф ---------- */
@@ -494,5 +516,5 @@
   async function exportSave(st) { await G.STORE.exportFile(serialize(st), `kombinaciya-${st.seasonName.replace('/', '-')}-tur${st.round + 1}`); }
   async function importSave(file) { const st = revive(await G.STORE.importFile(file)); if (!st) throw new Error('Файл не похож на сохранение игры'); save(st); return st; }
 
-  G.LEAGUE = { prepOpts, matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
+  G.LEAGUE = { importance, prepOpts, matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
 })(typeof window !== 'undefined' ? window : globalThis);
