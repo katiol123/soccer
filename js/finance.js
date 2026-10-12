@@ -321,7 +321,7 @@
      Спрос на матч (может превышать 1 — аншлаг с запасом): место хозяев, престиж обоих клубов, важность матча, кубок, погода.
      Цена — множитель к базовой цене клуба. Дороже — больше денег за билет, но меньше зрителей и слабее поддержка */
   const PRICES = [0.7, 0.85, 1, 1.2, 1.45, 1.75];
-  function demand(st, f, imp) {
+  function matchDemand(st, f, imp) {
     const H = st.clubs.find(c => c.id === f.h), A = st.clubs.find(c => c.id === f.a);
     let d;
     if (f.cup) d = 0.7 + (tierOf(H) - tierOf(A)) * 0.12 + (f.cr || 0) * 0.04;
@@ -567,5 +567,5 @@
   const fmtM = v => (v < 0 ? '−' : '') + '£' + Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1) + ' млн';
   const fmtW = v => '£' + Math.round(v) + ' тыс./нед';
 
-  G.FIN = { CAPACITY, EMB_WAGE, PRICES, demand, elastic, fillAt, pricing, aiPrice, setPrice, pres, presOf, presLabel, status, appeal, prestigeSeason, cupTarget, cupStageName, cupGoalText, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
+  G.FIN = { CAPACITY, EMB_WAGE, PRICES, matchDemand, elastic, fillAt, pricing, aiPrice, setPrice, pres, presOf, presLabel, status, appeal, prestigeSeason, cupTarget, cupStageName, cupGoalText, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
 })(typeof window !== 'undefined' ? window : globalThis);

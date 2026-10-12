@@ -149,7 +149,7 @@
     // спрос, чувствительность к цене и выбор цены (ИИ — сам, пользователь — цена по умолчанию, можно изменить перед матчем)
     const imp = importance(st, f, H);
     f.env.imp = Math.round(imp * 100) / 100;
-    f.env.dem = Math.round(G.FIN.demand(st, f, imp) * 1000) / 1000;
+    f.env.dem = Math.round(G.FIN.matchDemand(st, f, imp) * 1000) / 1000;
     f.env.k = Math.round(G.FIN.elastic(H, imp) * 1000) / 1000;
     const m = H.id === st.userClub ? (st.ticketM || 1) : G.FIN.aiPrice(st, f, imp);
     G.FIN.setPrice(st, f, m);
