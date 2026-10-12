@@ -76,7 +76,9 @@
     return br;
   }
 
-  function available(p) { return p.inj <= 0 && p.susp <= 0; }
+  /* Доступность: травма и дисквалификация. Дисквалификации в лиге и кубке раздельные —
+     TAC.cupMode включается на время подготовки кубкового матча */
+  function available(p) { return p.inj <= 0 && (TAC.cupMode ? (p.csusp || 0) <= 0 : p.susp <= 0); }
 
   /* Жадный подбор лучших 11 под схему с учётом свежести */
   /* Форма: средняя оценка последних матчей (взвешенная) → бонус ко всем характеристикам от −2 до +2 */
@@ -165,5 +167,5 @@
     };
   }
 
-  G.TAC = { ROLES, FORMATIONS, PLANS, MENTALITY, PRESSING, LINE, NAT_ROLES, lineSuit, roleRating, roleRatingRaw, overall, bestRole, bestXI, lineupRating, teamRating, defaultTactics, playerMap, available, formBonus, formLabel, computeForm, FORM_NEUTRAL };
+  const TAC = G.TAC = { cupMode: false, ROLES, FORMATIONS, PLANS, MENTALITY, PRESSING, LINE, NAT_ROLES, lineSuit, roleRating, roleRatingRaw, overall, bestRole, bestXI, lineupRating, teamRating, defaultTactics, playerMap, available, formBonus, formLabel, computeForm, FORM_NEUTRAL };
 })(typeof window !== 'undefined' ? window : globalThis);

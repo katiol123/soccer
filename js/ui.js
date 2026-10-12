@@ -218,6 +218,7 @@
     /* ---------- Хаб ---------- */
     hub(tab) {
       if (tab) this.tab = tab;
+      TAC.cupMode = false;
       const st = this.st;
       if (LEAGUE.seasonOver(st)) return this.seasonEnd();
       const root = el('div.screen.hub');
@@ -260,7 +261,7 @@
     /* Решение тренера соперника кэшируется на тур, чтобы скаут-отчёт совпадал с матчем */
     oppPlan(f, opp, uc, home) {
       const key = this.st.season + ':' + this.st.round + ':' + opp.id + (f.cup ? ':cup' : '');
-      if (!this._pred || this._pred.key !== key) this._pred = { key, tac: AI.prepare(opp, uc, home, { cup: f.cup ? f : null, env: LEAGUE.matchEnv(this.st, f) }) };
+      if (!this._pred || this._pred.key !== key) this._pred = { key, tac: AI.prepare(opp, uc, home, LEAGUE.prepOpts(this.st, f, opp)) };
       return this._pred.tac;
     },
 
@@ -278,7 +279,11 @@
       const st = this.st;
       if (!f || !f.cup) return st.userTactics;
       const key = st.season + ':' + st.round;
-      if (!st.cupTac || st.cupTac.key !== key) { LEAGUE.fixUserTactics(st); st.cupTac = { key, tac: JSON.parse(JSON.stringify(st.userTactics)) }; }
+      if (!st.cupTac || st.cupTac.key !== key) st.cupTac = { key, tac: JSON.parse(JSON.stringify(st.userTactics)) };
+      // в кубке действуют кубковые дисквалификации
+      const prev = TAC.cupMode; TAC.cupMode = true;
+      LEAGUE.fixUserTactics(st, st.cupTac.tac);
+      TAC.cupMode = prev;
       return st.cupTac.tac;
     },
     /* Лига, которую просматривает пользователь (таблица, календарь, статистика, матчи недели) */
@@ -517,7 +522,7 @@
       const uc = st.userClub;
       const tacFor = (club, opp, home) => {
         if (club.id === uc) return this.userTac(f);
-        return AI.prepare(club, opp, home, { cup: f.cup ? f : null, env });
+        return AI.prepare(club, opp, home, LEAGUE.prepOpts(st, f, club));
       };
       const env = LEAGUE.matchEnv(st, f);
       const ht = opts && opts.homeTac || tacFor(h, a, true), at = opts && opts.awayTac || tacFor(a, h, false);
@@ -584,6 +589,7 @@
     prematch(f) {
       const st = this.st, uc = LEAGUE.club(st, st.userClub);
       LEAGUE.fixUserTactics(st);
+      TAC.cupMode = !!f.cup;
       const isHome = f.h === uc.id;
       const opp = LEAGUE.club(st, isHome ? f.a : f.h);
       const oppTac = this.oppPlan(f, opp, uc, !isHome);
@@ -1520,7 +1526,7 @@
         club.players.slice().sort((a, b) => { const x = get(a, sortK), y = get(b, sortK); return (x > y ? 1 : x < y ? -1 : 0) * dir; }).forEach(p => {
           const tr = el('tr' + (TAC.available(p) ? '' : '.unavail'), { onclick: () => UI.playerModal(p, club) });
           tr.appendChild(el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]));
-          tr.appendChild(el('td.pname', null, [p.name + (p.star ? ' ★' : '') + (p.inj > 0 ? ' ✚' : '') + (p.susp > 0 ? ' 🟥' : '') + (p.loan ? ' 🤝' : '') + (p.academy === club.id ? ' 🎓' : '') + (p.retiring ? ' 👴' : '') + ' ', UI.traitIcons(p)]));
+          tr.appendChild(el('td.pname', null, [p.name + (p.star ? ' ★' : '') + (p.inj > 0 ? ' ✚' : '') + (p.susp > 0 ? ' 🟥' : '') + (p.csusp > 0 ? ' 🏆🟥' : '') + (p.loan ? ' 🤝' : '') + (p.academy === club.id ? ' 🎓' : '') + (p.retiring ? ' 👴' : '') + ' ', UI.traitIcons(p)]));
           tr.appendChild(el('td', { text: p.age }));
           G.DATA.ATTRS.forEach(a => tr.appendChild(el('td', null, [UI.attrCell(p.a[a.k])])));
           tr.appendChild(el('td', null, [p.pos === 'GK' ? UI.attrCell(p.a.ref) : el('span.muted', { text: '–' })]));

@@ -81,6 +81,11 @@
     }
     if (G.CUP) G.CUP.build(st);
   }
+  /* Параметры подготовки ИИ к матчу: кубок, погода и ближайший кубковый матч (чтобы поберечь основу) */
+  function prepOpts(st, f, c) {
+    const next = !f.cup && G.CUP ? G.CUP.weekTies(st, st.round + 1).find(t => !t.res && (t.h === c.id || t.a === c.id)) : null;
+    return { cup: f.cup ? f : null, env: matchEnv(st, f), nextCup: next ? { f: next, opp: club(st, next.h === c.id ? next.a : next.h), name: G.CUP.roundName(st, next) } : null };
+  }
   /* Восстановление свежести за неделю */
   function recovery(p) { return 24 + p.a.sta * 0.9 + ((p.h ? p.h.pro : 10) - 10) * 0.5; }
   /* Играет ли клуб матч лиги на этой неделе */
@@ -237,8 +242,14 @@
             p.st.yc += p.m.yc; p.st.rsum += p.m.rating || 6.5;
           }
           p.lp = st.round;
-          if (p.m.rc) { p.st.rc++; p.susp = Math.max(p.susp, U.randInt(1, 3)); G.FIN.fines(st, ts.club, p); }
-          if (p.m.yc && !p.m.rc && !fixture.cup) { p.yc += p.m.yc; if (p.yc >= 5) { p.susp = Math.max(p.susp, 1); p.yc = 0; } }
+          // дисквалификации раздельные: лига — за лигу, кубок — за кубок (3 жёлтые в кубке — пропуск матча)
+          if (fixture.cup) {
+            if (p.m.rc) { p.csusp = Math.max(p.csusp || 0, U.randInt(1, 2)); G.FIN.fines(st, ts.club, p); }
+            else if (p.m.yc) { p.cyc = (p.cyc || 0) + p.m.yc; if (p.cyc >= 3) { p.csusp = Math.max(p.csusp || 0, 1); p.cyc = 0; } }
+          } else {
+            if (p.m.rc) { p.st.rc++; p.susp = Math.max(p.susp, U.randInt(1, 3)); G.FIN.fines(st, ts.club, p); }
+            if (p.m.yc && !p.m.rc) { p.yc += p.m.yc; if (p.yc >= 5) { p.susp = Math.max(p.susp, 1); p.yc = 0; } }
+          }
           if (p.m.inj) p.inj = Math.max(1, U.randInt(1, 4) + (p.h && p.h.pro >= 15 ? -1 : p.h && p.h.pro <= 6 ? 1 : 0));
           p.fit = Math.round(p.m.fit);
           p.lastR = (p.lastR || []).concat([p.m.rating || 6.5]).slice(-5);
@@ -275,12 +286,13 @@
   /* Переход к следующему туру: восстановление, травмы, дисквалификации */
   function advance(st) {
     const rd = weekFixtures(st);
-    const playedClubs = new Set();
-    rd.forEach(f => { playedClubs.add(f.h); playedClubs.add(f.a); });
+    const playedLeague = new Set(), playedCup = new Set();
+    rd.forEach(f => { const s = f.cup ? playedCup : playedLeague; s.add(f.h); s.add(f.a); });
     st.clubs.forEach(c => c.players.forEach(p => {
       p.fit = Math.min(100, p.fit + recovery(p) * (c.dbl === st.round ? 0.5 : 1));
       if (p.inj > 0) p.inj--;
-      if (p.susp > 0 && playedClubs.has(c.id)) p.susp--;
+      if (p.susp > 0 && playedLeague.has(c.id)) p.susp--;
+      if (p.csusp > 0 && playedCup.has(c.id)) p.csusp--;
     }));
     G.FIN.round(st);
     st.round++;
@@ -292,9 +304,9 @@
   }
 
   /* Если в составе игрока травмы/дисквалификации — заменить автоматически */
-  function fixUserTactics(st) {
+  function fixUserTactics(st, tac) {
     const c = club(st, st.userClub);
-    const t = st.userTactics;
+    const t = tac || st.userTactics;
     const map = TAC.playerMap(c);
     const bad = t.lineup.some(id => !map[id] || !TAC.available(map[id]));
     const msgs = [];
@@ -313,7 +325,7 @@
     t.bench = t.bench.filter(id => map[id] && TAC.available(map[id]) && !inXI.has(id));
     const rest = c.players.filter(p => TAC.available(p) && !inXI.has(p.id) && !t.bench.includes(p.id)).sort((a, b) => TAC.overall(b) - TAC.overall(a));
     while (t.bench.length < 9 && rest.length) t.bench.push(rest.shift().id);
-    msgs.forEach(m => st.news.push({ r: st.round, text: m }));
+    if (t === st.userTactics) msgs.forEach(m => st.news.push({ r: st.round, text: m }));
     return msgs;
   }
 
@@ -395,7 +407,7 @@
       devs.push({ p, c, d });
       p.lastR = (p.lastR || []).slice(-2); // в новый сезон переносятся только 2 последние оценки
       p.form = TAC.computeForm(p);
-      p.fit = 100; p.inj = 0; p.susp = 0; p.yc = 0;
+      p.fit = 100; p.inj = 0; p.susp = 0; p.yc = 0; p.csusp = 0; p.cyc = 0;
       p.st = { apps: 0, goals: 0, assists: 0, yc: 0, rc: 0, rsum: 0 }; p.cst = null;
     }));
     // новости межсезонья
@@ -480,5 +492,5 @@
   async function exportSave(st) { await G.STORE.exportFile(serialize(st), `kombinaciya-${st.seasonName.replace('/', '-')}-tur${st.round + 1}`); }
   async function importSave(file) { const st = revive(await G.STORE.importFile(file)); if (!st) throw new Error('Файл не похож на сохранение игры'); save(st); return st; }
 
-  G.LEAGUE = { matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
+  G.LEAGUE = { prepOpts, matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
 })(typeof window !== 'undefined' ? window : globalThis);

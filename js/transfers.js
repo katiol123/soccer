@@ -423,15 +423,18 @@
 
   /* Игровое время в аренде: сколько матчей сыграно из возможных */
   function loanMinutes(st, p) {
-    const played = Math.max(0, (p.st.apps || 0) - (p.loan.apps0 || 0));
-    const possible = Math.max(1, G.LEAGUE.clubMatches(st, p.loan.to, p.loan.round0 || 0, st.round));
+    // учитываются и матчи лиги, и кубковые
+    const cupApps = (p.cst ? p.cst.apps : 0) - (p.loan.capps0 || 0);
+    const played = Math.max(0, (p.st.apps || 0) - (p.loan.apps0 || 0) + Math.max(0, cupApps));
+    const cupTies = st.cup && st.cup.season === st.season ? st.cup.rounds.filter(R => R.week >= (p.loan.round0 || 0) && R.week < st.round && R.ties.some(f => f.h === p.loan.to || f.a === p.loan.to)).length : 0;
+    const possible = Math.max(1, G.LEAGUE.clubMatches(st, p.loan.to, p.loan.round0 || 0, st.round) + cupTies);
     return { played, possible, share: played / possible };
   }
 
   /* Перемещение игрока в аренду */
   function moveLoan(st, p, from, to, terms) {
     from.players = from.players.filter(x => x !== p); delete from._map;
-    p.loan = { from: from.id, to: to.id, share: terms.share, promise: terms.promise, option: terms.option || null, fee: terms.fee || 0, season: st.season, round0: st.round, apps0: p.st.apps, num0: p.num };
+    p.loan = { from: from.id, to: to.id, share: terms.share, promise: terms.promise, option: terms.option || null, fee: terms.fee || 0, season: st.season, round0: st.round, apps0: p.st.apps, capps0: p.cst ? p.cst.apps : 0, num0: p.num };
     p.num = freeNumber(to);
     to.players.push(p); delete to._map;
     p.moved = windowState(st).id;

@@ -176,7 +176,8 @@
       }
     }
     if (p.inj > 0) content.appendChild(el('div.pc-warn', { text: `Травма: ещё ${p.inj} ${U.plural(p.inj, 'тур', 'тура', 'туров')}` }));
-    if (p.susp > 0) content.appendChild(el('div.pc-warn', { text: `Дисквалификация: ${p.susp} ${U.plural(p.susp, 'матч', 'матча', 'матчей')}` }));
+    if (p.susp > 0) content.appendChild(el('div.pc-warn', { text: `Дисквалификация в лиге: ${p.susp} ${U.plural(p.susp, 'матч', 'матча', 'матчей')}` }));
+    if (p.csusp > 0) content.appendChild(el('div.pc-warn', { text: `Дисквалификация в кубке: ${p.csusp} ${U.plural(p.csusp, 'матч', 'матча', 'матчей')}` }));
     const md = UI.modal({ title: club.name, content, buttons: [{ text: 'Закрыть', cls: 'ghost' }] });
     function stat(n, v) { return el('div.pc-stat', null, [el('b', { text: v }), el('small', { text: n })]); }
   };

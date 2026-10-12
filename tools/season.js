@@ -11,8 +11,8 @@ for (let s = 0; s < N; s++) {
   while (!LEAGUE.seasonOver(st)) {
     for (const f of LEAGUE.weekFixtures(st)) {
       const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a);
-      const env = LEAGUE.matchEnv(st, f), o = { cup: f.cup ? f : null, env };
-      const m = new ENGINE.Match({ home: { club: h, tactics: AI.prepare(h, a, true, o) }, away: { club: a, tactics: AI.prepare(a, h, false, o) }, turns: st.settings.turns, env });
+      const env = LEAGUE.matchEnv(st, f);
+      const m = new ENGINE.Match({ home: { club: h, tactics: AI.prepare(h, a, true, LEAGUE.prepOpts(st, f, h)) }, away: { club: a, tactics: AI.prepare(a, h, false, LEAGUE.prepOpts(st, f, a)) }, turns: st.settings.turns, env });
       m.simulate(); LEAGUE.record(st, f, m);
     }
     LEAGUE.advance(st);

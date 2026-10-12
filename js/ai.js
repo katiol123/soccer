@@ -18,7 +18,13 @@
   }
 
   /* Подготовка к матчу: схема, состав и план с учётом предпочтений, состава и соперника */
+  /* Подготовка к матчу; для кубка учитываются кубковые дисквалификации */
   function prepare(club, opp, isHome, opts) {
+    const prev = TAC.cupMode;
+    TAC.cupMode = !!(opts && opts.cup);
+    try { return prepareInner(club, opp, isHome, opts); } finally { TAC.cupMode = prev; }
+  }
+  function prepareInner(club, opp, isHome, opts) {
     const c = club.coach;
     const notes = [];
     const myR = TAC.teamRating(club), oppR = TAC.teamRating(opp);
@@ -26,7 +32,22 @@
     const ctx = { strongOpp: oppR >= 16, weakOpp: oppR <= 14.5, away: !isHome };
     // кубок: ротация основы (сильнее соперник и решающие раунды — меньше ротации)
     const cupF = opts && opts.cup;
-    const exclude = cupRest(club, opp, cupF);
+    let exclude = cupRest(club, opp, cupF);
+    // впереди важный кубковый матч — гибкий тренер бережёт лидеров в лиге
+    let saved = null;
+    if (!cupF && opts && opts.nextCup) {
+      const nc = opts.nextCup, stage = nc.f.cr || 0, ncR = TAC.teamRating(nc.opp);
+      const important = stage >= 4 || (stage >= 3 && myR - oppR > 0.8) || (stage >= 2 && ncR > myR + 0.5 && myR - oppR > 1.2);
+      if (important && U.rnd() < 0.35 + c.adapt * 0.6) {
+        const avail = club.players.filter(p => TAC.available(p));
+        const k = U.clamp(Math.round(c.adapt * 2 + (stage >= 5 ? 1 : 0)), 1, 3);
+        if (avail.length - k >= 14) {
+          const top = avail.filter(p => p.pos !== 'GK').sort((a, b) => TAC.overall(b) - TAC.overall(a)).slice(0, 11).sort((a, b) => (a.fit - b.fit) || (TAC.overall(b) - TAC.overall(a)));
+          saved = top.slice(0, k);
+          exclude = new Set(saved.map(p => p.id));
+        }
+      }
+    }
     const HAS = G.TRAITS.has;
     // схема
     let best = null;
@@ -97,8 +118,9 @@
     };
     // особенности в составе
     const map = TAC.playerMap(club);
-    if (exclude && exclude.size) { const r = [...exclude].map(id => map[id]).filter(Boolean).sort((a, b) => TAC.overall(b) - TAC.overall(a)); notes.unshift(`Кубок: ротация — отдыхают ${r.slice(0, 3).map(p => p.name).join(', ')}${r.length > 3 ? ` и ещё ${r.length - 3}` : ''}.`); }
+    if (cupF && exclude && exclude.size) { const r = [...exclude].map(id => map[id]).filter(Boolean).sort((a, b) => TAC.overall(b) - TAC.overall(a)); notes.unshift(`Кубок: ротация — отдыхают ${r.slice(0, 3).map(p => p.name).join(', ')}${r.length > 3 ? ` и ещё ${r.length - 3}` : ''}.`); }
     else if (cupF && cupF.neutral) notes.unshift('Кубок: решающий матч — сильнейший состав.');
+    if (saved) notes.unshift(`Впереди ${opts.nextCup.name} Кубка Англии против «${opts.nextCup.opp.name}» — бережём ${saved.map(p => p.name).join(', ')}.`);
     const xiP = best.xi.lineup.map(id => map[id]).filter(Boolean);
     const bg = xiP.filter(p => ctx.strongOpp ? HAS(p, 'bigGame') : ctx.weakOpp ? HAS(p, 'flatTrack') : false);
     if (bg.length) notes.push(`${ctx.strongOpp ? 'Против фаворита' : 'Против слабого'} ставка на ${bg.map(p => p.name).join(', ')} (${ctx.strongOpp ? '⭐ любит большие матчи' : '🐯 хорош против слабых'}).`);
