@@ -253,6 +253,61 @@
     return list;
   }
 
+  /* Сборная тура: по каждой лиге и неделе храним лучших кандидатов на каждую линию;
+     схема подбирается под них — та, что даёт наибольшую сумму оценок */
+  const XI = { GK: 1, DF: 5, MF: 5, FW: 3 };
+  const XI_SCHEMES = [[4, 3, 3], [4, 4, 2], [4, 5, 1], [3, 4, 3], [3, 5, 2], [5, 3, 2], [5, 4, 1]];
+  function pickXI(c) {
+    const sum = (arr, n) => arr.length >= n ? arr.slice(0, n).reduce((s, e) => s + e.r, 0) : -1e9;
+    let best = null;
+    XI_SCHEMES.forEach(([d, m, f], i) => {
+      const v = sum(c.DF, d) + sum(c.MF, m) + sum(c.FW, f) - i * 1e-6;   // при равенстве — более привычная схема
+      if (!best || v > best.v) best = { v, d, m, f };
+    });
+    const xi = [];
+    const add = (pos, n) => c[pos].slice(0, n).forEach(e => xi.push(Object.assign({ pos }, e)));
+    add('GK', 1); add('DF', best.d); add('MF', best.m); add('FW', best.f);
+    return { scheme: `${best.d}-${best.m}-${best.f}`, xi };
+  }
+  function totwAdd(st, fixture, match) {
+    const hc = club(st, fixture.h); if (!hc) return;
+    const T = st.totw || (st.totw = { season: st.season, lg: {} });
+    if (T.season !== st.season) { T.season = st.season; T.lg = {}; }
+    const L = T.lg[hc.league] || (T.lg[hc.league] = {});
+    const W = L[st.round] || (L[st.round] = { GK: [], DF: [], MF: [], FW: [] });
+    for (const s of ['home', 'away']) for (const p of match.t[s].club.players) {
+      if (!p.m || !p.m.played || !p.m.rating || !W[p.pos]) continue;
+      const arr = W[p.pos];
+      arr.push({ id: p.id, c: match.t[s].club.id, r: p.m.rating, g: p.m.goals, a: p.m.assists });
+      arr.sort((x, y) => y.r - x.r || (y.g + y.a) - (x.g + x.a));
+      arr.length = Math.min(arr.length, XI[p.pos]);
+    }
+  }
+  /* Сборная тура лиги за неделю (или последнюю сыгранную) */
+  function teamOfWeek(st, lid, week) {
+    const L = st.totw && st.totw.season === st.season && st.totw.lg[lid];
+    if (!L) return null;
+    const weeks = Object.keys(L).map(Number).sort((a, b) => a - b);
+    if (!weeks.length) return null;
+    const w = week != null && L[week] ? week : weeks[weeks.length - 1];
+    const t = pickXI(L[w]);
+    return { week: w, weeks, xi: t.xi, scheme: t.scheme };
+  }
+  /* Сборная сезона: лучшие средние оценки в лиге (не меньше 40% сыгранных туров) */
+  function teamOfSeason(st, lid) {
+    const played = (standings(st, lid)[0] || { p: 0 }).p;
+    const min = Math.max(1, Math.ceil(played * 0.4));
+    const C = {};
+    for (const pos of ['GK', 'DF', 'MF', 'FW']) {
+      const cand = [];
+      leagueClubs(st, lid).forEach(c => c.players.forEach(p => { if (p.pos === pos && p.st.apps >= min) cand.push({ id: p.id, c: c.id, r: p.st.rsum / p.st.apps, g: p.st.goals, a: p.st.assists, apps: p.st.apps }); }));
+      C[pos] = cand.sort((x, y) => y.r - x.r || y.apps - x.apps).slice(0, XI[pos]);
+    }
+    if (!C.GK.length) return { played, min, xi: [] };
+    const t = pickXI(C);
+    return { played, min, xi: t.xi, scheme: t.scheme };
+  }
+
   /* Учёт результата матча */
   function record(st, fixture, match) {
     const goals = match.goals.map(g => ({ side: g.side, min: g.min, scorer: g.scorer, assist: g.assist, kind: g.kind }));
@@ -291,6 +346,7 @@
     }
     // игрок матча получает небольшой прилив настроения
     if (motm && motm.mood != null) motm.mood = Math.min(100, motm.mood + 5);
+    if (!fixture.cup && !fixture.po) totwAdd(st, fixture, match);
     fixture.res = { hs: match.score.home, as: match.score.away, goals, stats, motm: motm ? motm.name : null, motmR: motm ? motm.m.rating : null, watched: !!match.watched };
     // плей-офф: ничья — серия пенальти (шанс зависит от силы и хладнокровия)
     if ((fixture.po || fixture.cup) && fixture.res.hs === fixture.res.as) {
@@ -562,5 +618,5 @@
   async function exportSave(st) { await G.STORE.exportFile(serialize(st), `kombinaciya-${st.seasonName.replace('/', '-')}-tur${st.round + 1}`); }
   async function importSave(file) { const st = revive(await G.STORE.importFile(file)); if (!st) throw new Error('Файл не похож на сохранение игры'); save(st); return st; }
 
-  G.LEAGUE = { track, isDerby, importance, prepOpts, matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
+  G.LEAGUE = { teamOfWeek, teamOfSeason, track, isDerby, importance, prepOpts, matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1706,7 +1706,10 @@
     tabStats(body) {
       const st = this.st, lid = this.vlg();
       const seg = this.leagueSeg(lid);
-      if (seg) body.appendChild(el('div.card.seg-card', null, [seg]));
+      const sub = el('div.seg');
+      [['lead', 'Лидеры'], ['totw', 'Сборная тура'], ['tots', 'Сборная чемпионата']].forEach(([k, n]) => sub.appendChild(el('button' + ((this._statSub || 'lead') === k ? '.on' : ''), { text: n, onclick: () => { this._statSub = k; this.hub(); } })));
+      body.appendChild(el('div.card.seg-card.stat-segs', null, [seg, sub]));
+      if (this._statSub === 'totw' || this._statSub === 'tots') return this.teamXI(body, lid, this._statSub);
       const grid = el('div.stats-grid');
       const all = [];
       const played = (LEAGUE.standings(st, lid)[0] || { p: 0 }).p;
@@ -1722,6 +1725,55 @@
       grid.appendChild(block('Лучшие оценки', all.filter(x => x.p.st.apps >= Math.max(1, Math.floor(played / 3))).sort((a, b) => b.p.st.rsum / b.p.st.apps - a.p.st.rsum / a.p.st.apps).slice(0, 12), x => (x.p.st.rsum / x.p.st.apps).toFixed(2)));
       grid.appendChild(block('Жёлтые карточки', all.filter(x => x.p.st.yc).sort((a, b) => b.p.st.yc - a.p.st.yc).slice(0, 12), x => x.p.st.yc));
       body.appendChild(grid);
+    },
+
+    /* Сборная тура / чемпионата: поле 4-3-3 с лицами, гербами и оценками */
+    teamXI(body, lid, kind) {
+      const st = this.st;
+      const find = (id, cid) => {
+        for (const c of st.clubs) { const p = c.players.find(x => x.id === id); if (p) return { p, c }; }
+        const p = (st.fa || []).find(x => x.id === id);
+        return p ? { p, c: st.clubs.find(c => c.id === cid) || { id: '_fa', name: 'Свободный агент', c1: '#444', c2: '#888', short: 'FA' } } : null;
+      };
+      const card = el('div.card.xi-card');
+      let data, title, sub;
+      if (kind === 'totw') {
+        data = LEAGUE.teamOfWeek(st, lid, this._totwWeek);
+        if (!data) { card.appendChild(el('div.muted', { text: 'Туры ещё не сыграны — сборная тура появится после первого тура.' })); body.appendChild(card); return; }
+        const idx = data.weeks.indexOf(data.week);
+        const go = d => { this._totwWeek = data.weeks[idx + d]; this.hub(); };
+        title = 'Сборная тура';
+        sub = el('div.xi-nav', null, [
+          el('button.btn.small.ghost', { text: '◀', disabled: idx <= 0, onclick: () => go(-1) }),
+          el('b', { text: `${LEAGUE.weekLabel(st, lid, data.week)} · неделя ${data.week + 1}` }),
+          el('button.btn.small.ghost', { text: '▶', disabled: idx >= data.weeks.length - 1, onclick: () => go(1) })
+        ]);
+      } else {
+        data = LEAGUE.teamOfSeason(st, lid);
+        title = 'Сборная чемпионата';
+        sub = el('small.muted', { text: data.played ? `Средняя оценка за сезон · не меньше ${data.min} ${U.plural(data.min, 'матча', 'матчей', 'матчей')} в лиге (сыграно туров: ${data.played})` : 'Сезон ещё не начался' });
+        if (!data.xi.length) { card.appendChild(el('h3', { text: title })); card.appendChild(sub); body.appendChild(card); return; }
+      }
+      card.appendChild(el('div.xi-head', null, [el('h3', null, [`${title} · ${LEAGUE.leagueInfo(st, lid).name} `, data.scheme ? el('span.xi-scheme', { text: data.scheme }) : null]), sub]));
+      const pitch = el('div.xi-pitch');
+      pitch.appendChild(el('div.xi-lines', { html: '<i class="h"></i><i class="c"></i><i class="b1"></i><i class="b2"></i>' }));
+      for (const pos of ['FW', 'MF', 'DF', 'GK']) {
+        const row = el('div.xi-row');
+        data.xi.filter(e => e.pos === pos).forEach(e => {
+          const f = find(e.id, e.c); if (!f) return;
+          const c = st.clubs.find(x => x.id === e.c) || f.c;
+          const nm = f.p.name.split(' '), last = nm.slice(1).join(' ') || nm[0];
+          const r = e.r;
+          row.appendChild(el('div.xi-p', { onclick: () => UI.playerModal(f.p, f.c), title: `${f.p.name} — ${c.name}` }, [
+            el('div.xi-av', null, [UI.face(f.p, 58, c), el('span.xi-crest', null, [UI.crest(c, 22)]), el('b.xi-r', { text: r.toFixed(kind === 'totw' ? 1 : 2), style: { background: r >= 8 ? '#00c46a' : r >= 7 ? '#8bc34a' : r >= 6.5 ? '#c9a800' : '#e0702a' } })]),
+            el('div.xi-nm', null, [el('small', { text: nm.length > 1 ? nm[0] : '' }), el('span', { text: last })]),
+            (e.g || e.a) ? el('div.xi-ga', { text: (e.g ? '⚽' + (e.g > 1 ? '×' + e.g : '') : '') + (e.a ? ' 🅰' + (e.a > 1 ? '×' + e.a : '') : '') }) : null
+          ]));
+        });
+        pitch.appendChild(row);
+      }
+      card.appendChild(pitch);
+      body.appendChild(card);
     },
 
     tabSquad(body) {
