@@ -380,6 +380,8 @@
         let g = this.tmul(side, 'pas') * CFG.base.pas * c[1] * R(this.val(side, 'pas', ph), this.val(OTHER(side), 'pos', dph)) * (plan === 'possession' ? 1.3 : 1) * (plan === 'counter' ? 0.9 : 1);
         g *= mult * aM * shieldF * directF;
         gain += g; me.st.passes += c[1];
+        // точная передача уводит мяч от прессинга (Пас против Отбора соперника)
+        opp.pressure = Math.max(0, opp.pressure - 5 * c[1] * mult * R(this.val(side, 'pas', ph), this.val(OTHER(side), 'tac', dph)));
         fx.push({ k: 'gain', t: 1, v: g, text: '+' + Math.round(g) + ' пас' });
         const passer = this.credit(side, 'pas', ph, 0.02 * c[1]);
         // у чужой штрафной точный пас выводит партнёра на удар: заряд момента растёт (неточный — сбивает)
@@ -434,6 +436,8 @@
         if (!rOk) g *= 0.5;
         gain += g;
         ctx.paceGain = (ctx.paceGain || 0) + g;
+        // рывок уводит мяч от прессингующих (Скорость против Скорости)
+        opp.pressure = Math.max(0, opp.pressure - 3.5 * c[3] * mult * R(this.val(side, 'pac', ph), this.val(OTHER(side), 'pac', dph)) * (rOk ? 1 : 0.5));
         fx.push({ k: 'gain', t: 3, v: g, text: '+' + Math.round(g) + (cm > 1 ? ' КОНТРАТАКА' : ' рывок') });
       }
       if (c[4]) { // Отбор у владеющей стороны = борьба за мяч
@@ -548,7 +552,7 @@
       const highUp = arp <= 1; // прессинг на чужой половине
       let press = 0;
       if (c[4]) { // Отбор
-        let p = CFG.pressBase * c[4] * R(this.val(side, 'tac', ph), this.val(aSide, 'dri', aph)) * PRESS_M[me.tac.pressing];
+        let p = CFG.pressBase * c[4] * Math.pow(R(this.val(side, 'tac', ph), this.val(aSide, 'dri', aph)), 0.8) * PRESS_M[me.tac.pressing] * Math.sqrt(R(this.val(side, 'sta', ph), this.val(aSide, 'sta', aph)));
         if (plan === 'gegenpress') p *= highUp ? 1.5 : 1.3;
         if (me.tac.line === 2 && highUp) p *= 1.15;
         if (oplan === 'possession') p *= 0.85;
@@ -579,7 +583,7 @@
         fx.push({ k: 'slow', t: 3, text: '−' + Math.round(m) + ' темп соперника' });
       }
       if (c[5]) { // Позиция: щит
-        let s = CFG.shieldBase * c[5] * R(this.val(side, 'pos', ph), this.val(aSide, 'pos', aph)) * mult * dM;
+        let s = CFG.shieldBase * c[5] * Math.pow(R(this.val(side, 'pos', ph), this.val(aSide, 'pos', aph)), 0.8) * mult * dM;
         if (plan === 'park') s *= 1.45;
         s *= this.tmul(side, 'shield');
         if (me.tac.line === 0 && arp >= 3) s *= 1.15;
@@ -671,7 +675,7 @@
     /* Дополнительная трата сил за индивидуальное действие (с учётом Выносливости, черт и погоды) */
     tire(p, k) {
       if (!p || !p.m) return;
-      p.m.fit = Math.max(5, p.m.fit - k * this.wx.drain * this.pm(p, 'drain') * (1.45 - p.a.sta / 20 * 0.9) * (24 / this.H));
+      p.m.fit = Math.max(5, p.m.fit - k * this.wx.drain * this.pm(p, 'drain') * (1.6 - p.a.sta / 20 * 1.2) * (24 / this.H));
     }
     chainMark(side, p, flag) { const ch = this.chain[side]; for (let i = ch.length - 1; i >= 0; i--) if (ch[i].p === p) { ch[i][flag] = true; return; } }
     chainAdd(side, p, attr) {
@@ -994,7 +998,7 @@
         for (const x of ts.onPitch) {
           if (!x.p) continue;
           const role = x.slot.role === 'GK' ? 0.25 : 1;
-          x.p.m.fit = Math.max(5, x.p.m.fit - drain * role * this.pm(x.p, 'drain') * (1.45 - x.p.a.sta / 20 * 0.9) * (0.9 + 0.2 * U.rnd()) * (24 / this.H));
+          x.p.m.fit = Math.max(5, x.p.m.fit - drain * role * this.pm(x.p, 'drain') * (1.6 - x.p.a.sta / 20 * 1.2) * (0.9 + 0.2 * U.rnd()) * (24 / this.H));
           // мышечная травма на усталости (без контакта)
           if (role === 1 && !x.p.m.inj && x.p.m.fit < 45 && U.rnd() < 0.0006 * (45 - x.p.m.fit) / 10 * this.pm(x.p, 'injury') * (24 / this.H)) {
             x.p.m.inj = true; x.p.m.fit = Math.min(x.p.m.fit, 30);
