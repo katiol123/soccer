@@ -382,9 +382,17 @@
         const passer = this.credit(side, 'pas', ph, 0.02 * c[1]);
         // у чужой штрафной точный пас выводит партнёра на удар: заряд момента растёт (неточный — сбивает)
         if (passer && rp >= 3) {
-          const v = this.passCharge(passer, c[1]);
-          me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
-          if (Math.abs(v) >= 2) fx.push({ k: 'charge', t: 1, text: v > 0 ? `+${Math.round(v)} передача под удар` : `${Math.round(v)} неточный пас` });
+          if (U.rnd() < this.passMissP(passer)) {
+            const lost = Math.min(me.shotCharge, 8 + U.rnd() * 6), cc = 6 + U.rnd() * 6;
+            me.shotCharge -= lost;
+            opp.counterCharge = Math.min(70, opp.counterCharge + cc);
+            fx.push({ k: 'charge', t: 1, text: `Неточный пас: −${Math.round(lost)} к моменту` });
+            if (this.log && U.rnd() < 0.5) this.say('info', `${this.pname(passer)} ошибается с передачей — соперник готовит ответный выпад.`, side);
+          } else {
+            const v = this.passCharge(passer, c[1]);
+            me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
+            fx.push({ k: 'charge', t: 1, text: `+${Math.round(v)} передача под удар` });
+          }
         }
       }
       if (c[2]) { // Дриблинг
@@ -625,11 +633,13 @@
         return rec * kindK * cross * Math.pow(this.pa(e.p, 'pas'), 1.5) * this.pm(e.p, 'assistW');
       }).p;
     }
-    /* Передача под удар: в последней трети поля точный пас заряжает шкалу «к моменту» (заряд удара) */
+    /* Передача под удар у чужой штрафной: удачная заряжает шкалу «к моменту», неудачная — сбивает её
+       и заряжает контратаку соперника. Шанс ошибки тем выше, чем ниже Пас */
+    passMissP(p) { return U.clamp(0.26 - (this.pa(p, 'pas') - 10) * 0.022 - (TRAITS.has(p, 'vision') ? 0.05 : 0) + (1 - this.fatF(p)) * 0.6, 0.05, 0.5); }   // усталость: при 50% свежести ≈ +8%
     passCharge(p, n) {
-      let b = (this.pa(p, 'pas') - 10) * 1.1 * Math.min(1.6, 0.7 + n * 0.15);
+      let b = 3 + (this.pa(p, 'pas') - 10) * 0.9 * Math.min(1.6, 0.7 + n * 0.15);
       if (TRAITS.has(p, 'vision')) b += 3;
-      return U.clamp(b, -8, 16);
+      return U.clamp(b * this.fatF(p), 2, 16);   // уставший отдаёт пас хуже
     }
 
     turnover(newSide, reason, fx) {
