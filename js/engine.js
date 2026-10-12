@@ -1056,7 +1056,7 @@
         const conceded = this.score[OTHER(s)];
         const all = ts.club.players.filter(p => p.m && p.m.played);
         for (const p of all) {
-          let r = 6.2 + p.m.perf + res[s] * 0.35;
+          let r = 6.15 + p.m.perf + res[s] * 0.35;
           if ((p.pos === 'DF' || p.pos === 'GK')) r += conceded === 0 ? 0.6 : -0.2 * conceded;
           r += (U.rnd() - 0.45) * 0.8;
           p.m.rating = U.clamp(Math.round(r * 10) / 10, 3, 10);
