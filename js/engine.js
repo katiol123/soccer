@@ -77,9 +77,10 @@
       p.m.mood = mood;
       if (mood < 35 && !p.m.shift) p.m.shift = U.rnd() < 0.5 ? 1 : -1;       // нестабильность: может и блеснуть, и провалиться
       p.m.hot = mood < 35 && tem >= 12 ? 1 + (tem - 11) * 0.08 : 1;          // обиженный вспыльчивый чаще фолит
+      p.m.temK = 1 + (tem - 10) * 0.02;                                          // темперамент: ±20% к фолам у крайних значений
     }
-    /* Командный множитель фолов от обиженных вспыльчивых игроков на поле */
-    hotK(side) { const ps = this.t[side].onPitch.filter(x => x.p); return ps.length ? ps.reduce((a, x) => a + (x.p.m.hot || 1), 0) / ps.length : 1; }
+    /* Командный множитель фолов: темперамент игроков на поле и обиженные вспыльчивые */
+    hotK(side) { const ps = this.t[side].onPitch.filter(x => x.p); return ps.length ? ps.reduce((a, x) => a + (x.p.m.hot || 1) * (x.p.m.temK || 1), 0) / ps.length : 1; }
     /* Самоотдача без мяча (отбор, позиционная игра): счастливые бьются, обиженные «выключаются» при плохом счёте */
     effort(p) {
       const mood = p.m.mood;
@@ -573,7 +574,7 @@
       const me = this.t[side], aSide = OTHER(side), opp = this.t[aSide];
       me.st.fouls++;
       const list = me.onPitch.filter(x => x.p && x.slot.role !== 'GK');
-      const fouler = U.pickWeighted(list, x => (TAC.ROLES[x.slot.role].w[ph] + 0.05) * (22 - this.pa(x.p, 'tac')) * (22 - this.pa(x.p, 'com')) * this.pm(x.p, 'foulW') * (x.p.m.hot || 1)).p;
+      const fouler = U.pickWeighted(list, x => (TAC.ROLES[x.slot.role].w[ph] + 0.05) * (22 - this.pa(x.p, 'tac')) * (22 - this.pa(x.p, 'com')) * this.pm(x.p, 'foulW') * (x.p.m.hot || 1) * (x.p.m.temK || 1)).p;
       const victim = this.pickPlayer(aSide, 'dri', PHASE(this.rp(aSide)));
       me.pressure = 0;
       ctx.stopped = true;
