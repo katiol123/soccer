@@ -109,7 +109,13 @@
     let line = c.line;
     const oppRunners = oppXi.lineup.map(id => TAC.playerMap(opp)[id]).filter(p => p && (HAS(p, 'runner') || HAS(p, 'counterKing')));
     if (oppRunners.length >= 2 && line >= 1.5 && c.adapt > 0.4) { line -= 0.7; notes.push(`У соперника ${oppRunners.length} игрока, любящих забегания (${oppRunners.map(p => p.name).join(', ')}), — без высокой линии.`); }
-    if (oprof.fwPac > prof.dfPac + 1.5) { line -= 0.8 * c.adapt; if (c.adapt > 0.4) notes.push('У соперника быстрые форварды — линию обороны опускаем.'); }
+    // нападающие обычно быстрее защитников (в среднем на ~1.8) — тревожно, только если разрыв заметно больше обычного
+    const PAC_GAP = 3.2;
+    if (oprof.fwPac > prof.dfPac + PAC_GAP) {
+      const was = U.clamp(Math.round(line), 0, 2);
+      line -= (0.6 + 0.3 * Math.min(2, oprof.fwPac - prof.dfPac - PAC_GAP)) * c.adapt;
+      if (c.adapt > 0.4 && U.clamp(Math.round(line), 0, 2) < was) notes.push(`У соперника очень быстрые форварды (скорость ${oprof.fwPac.toFixed(1)} против ${prof.dfPac.toFixed(1)} у наших защитников) — линию обороны опускаем.`);
+    }
     if (plan === 'park') line = Math.min(line, 0.6);
     const tactics = {
       formation, plan, mentality,
@@ -305,7 +311,7 @@
     }
     // 4. Соперник создаёт слишком много
     if (opp.st.xg > ts.st.xg + 0.5 * minK && act(c.adapt + 0.1)) {
-      if (ts.tac.line >= 1 && them.fwPac > me.dfPac + 1) { match.setTactic(side, 'line', ts.tac.line - 1); coachSay(match, side, `Их быстрые нападающие убегают за спину — опускаем линию обороны.`); changes++; }
+      if (ts.tac.line >= 1 && them.fwPac > me.dfPac + 2.8) { match.setTactic(side, 'line', ts.tac.line - 1); coachSay(match, side, `Их быстрые нападающие убегают за спину — опускаем линию обороны.`); changes++; }
       else if (diff >= 0 && ts.tac.mentality > 0) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, 'Слишком много отдаём сопернику — чуть осторожнее.'); changes++; }
       else if (ts.tac.pressing < 2 && them.tech < 13) { match.setTactic(side, 'pressing', ts.tac.pressing + 1); coachSay(match, side, 'Они слабы технически — давим выше и не даём им строить атаки.'); changes++; }
     }
