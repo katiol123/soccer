@@ -822,3 +822,23 @@ table.league tr.po td.pos { box-shadow: inset 3px 0 0 #ffd23f; }
 .pb-opt b { font-size: 16px; } .pb-opt:hover { border-color: var(--accent); } .pb-opt.on { border-color: var(--accent); background: rgba(0,255,135,.12); }
 .price-default { margin-bottom: 14px; } .price-default .seg { margin-top: 6px; }
 .derby-tag { color: #ff6b3d; }
+/* ---------- Графики ---------- */
+.ch-controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; margin-bottom: 10px; }
+.ch-legend { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+.ch-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--panel); font-size: 13px; }
+.ch-chip i, .ch-sw, .ch-tip i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.ch-x { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0 0 0 2px; }
+.ch-box { position: relative; background: #1a1430; border-radius: 14px; padding: 6px 4px; }
+.ch-svg { width: 100%; height: auto; display: block; }
+.ch-grid { stroke: rgba(255,255,255,.07); stroke-width: 1; }
+.ch-season { stroke: rgba(255,255,255,.18); stroke-width: 1; stroke-dasharray: 4 4; }
+.ch-cross { stroke: rgba(255,255,255,.35); stroke-width: 1; }
+.ch-tick { fill: #898781; font-size: 12px; }
+.ch-band { fill: #898781; font-size: 12px; font-weight: 700; }
+.ch-label { fill: #f0efec; font-size: 12px; font-weight: 700; }
+.ch-tip { position: absolute; display: none; pointer-events: none; min-width: 170px; padding: 8px 10px; border-radius: 10px; background: rgba(13,10,24,.95); box-shadow: 0 6px 20px rgba(0,0,0,.4), inset 0 0 0 1px var(--line); font-size: 12px; color: #f0efec; }
+.ch-tip b { display: block; margin-bottom: 4px; color: #c3c2b7; }
+.ch-tip div { display: flex; align-items: center; gap: 6px; }
+.ch-table { margin-top: 12px; } .ch-table td.club { display: flex; align-items: center; gap: 8px; }
+.charts .card + .card { margin-top: 14px; }
+@media (max-width: 1600px) { .hub-nav { gap: 2px; } .hub-nav button { padding: 8px 9px; font-size: 14px; } .hub-nav button.on::after { left: 9px; right: 9px; } }

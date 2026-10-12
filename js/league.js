@@ -228,6 +228,7 @@
     }
     G.FIN.init(st);
     G.CAR.ensure(st);
+    track(st);
     return st;
   }
 
@@ -328,10 +329,45 @@
     G.FIN.round(st);
     st.round++;
     if (G.CUP) G.CUP.after(st, st.round - 1);
+    track(st);
     playoffStep(st);
     if (G.TR) G.TR.afterRound(st);
     G.CAR.afterRound(st);
     if (st.userClub) fixUserTactics(st);
+  }
+
+  /* ---------- история для графиков ----------
+     Каждую неделю — снимок по всем клубам: баланс, место в лиге и в пирамиде, очки, стоимость состава,
+     зарплаты, престиж, болельщики; для клуба пользователя — доверие совета. Хранятся последние 5 сезонов */
+  const TRK_KEYS = ['bal', 'pos', 'rank', 'pts', 'val', 'wage', 'pres', 'fans', 'tier'];
+  const TRK_MAX = 5 * 49;
+  function track(st) {
+    const T = st.trk || (st.trk = { t: [], c: {}, conf: [] });
+    T.t.push(st.season * 100 + st.round);
+    const n = T.t.length, info = {};
+    let offset = 0;
+    for (const lid of leagueIds(st)) {
+      const t = standings(st, lid);
+      t.forEach((r, i) => { info[r.id] = { pos: i + 1, rank: offset + i + 1, pts: r.pts }; });
+      offset += t.length;
+    }
+    const r1 = v => Math.round(v * 10) / 10;
+    for (const c of st.clubs) {
+      const s = T.c[c.id] || (T.c[c.id] = {});
+      TRK_KEYS.forEach(k => { s[k] = s[k] || []; while (s[k].length < n - 1) s[k].push(null); });
+      const x = info[c.id] || {}, started = st.round > 0;
+      s.bal.push(c.fin ? r1(c.fin.balance) : null);
+      s.pos.push(started ? x.pos : null); s.rank.push(started ? x.rank : null); s.pts.push(started ? x.pts : 0);
+      s.val.push(c.fin ? Math.round(G.FIN.squadValue(c)) : null);
+      s.wage.push(c.fin ? G.FIN.wageBill(c) : null);
+      s.pres.push(r1(G.FIN.pres(c))); s.fans.push(r1(G.FIN.fans(c))); s.tier.push(tier(c));
+    }
+    T.conf.push(st.board && st.userClub ? Math.round(st.board.conf) : null);
+    if (n > TRK_MAX) {
+      const cut = n - TRK_MAX;
+      T.t.splice(0, cut); T.conf.splice(0, cut);
+      for (const id in T.c) TRK_KEYS.forEach(k => T.c[id][k] && T.c[id][k].splice(0, cut));
+    }
   }
 
   /* Если в составе игрока травмы/дисквалификации — заменить автоматически */
@@ -453,6 +489,7 @@
     G.FIN.seasonStart(st);
     if (G.TR) { const m = G.TR.market(st); m.neg = {}; m.offers = []; G.TR.afterRound(st); }
     if (st.userClub) fixUserTactics(st);
+    track(st);
   }
 
   /* Развитие игрока за межсезонье: возраст + средняя оценка + игровое время */
@@ -525,5 +562,5 @@
   async function exportSave(st) { await G.STORE.exportFile(serialize(st), `kombinaciya-${st.seasonName.replace('/', '-')}-tur${st.round + 1}`); }
   async function importSave(file) { const st = revive(await G.STORE.importFile(file)); if (!st) throw new Error('Файл не похож на сохранение игры'); save(st); return st; }
 
-  G.LEAGUE = { isDerby, importance, prepOpts, matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
+  G.LEAGUE = { track, isDerby, importance, prepOpts, matchEnv, leagueIds, tier, above, buildCalendar, weeks, cal, roundOf, roundsTotal, weekLabel, weekFixtures, clubMatches, winner, seasonSummary, leagueClubs, leagueInfo, attach, serialize, revive, exportSave, importSave, newGame, club, standings, record, advance, fixUserTactics, seasonOver, newSeason, topScorers, save, load, hasSave, clearSave, schedule };
 })(typeof window !== 'undefined' ? window : globalThis);

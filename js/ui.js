@@ -227,7 +227,7 @@
       const uc = st.userClub ? LEAGUE.club(st, st.userClub) : null;
       if (uc) { root.style.setProperty('--c1', uc.c1); root.style.setProperty('--c2', uc.c2); }
       const nav = el('nav.hub-nav');
-      const tabs = [['home', 'Главная'], ['squad', uc ? 'Состав и тактика' : 'Клубы'], ['table', 'Таблица'], ['fixtures', 'Календарь'], ['stats', 'Статистика'], ['finance', 'Финансы'], ['transfers', 'Трансферы'], ['cup', 'Кубок']];
+      const tabs = [['home', 'Главная'], ['squad', uc ? 'Состав и тактика' : 'Клубы'], ['table', 'Таблица'], ['fixtures', 'Календарь'], ['stats', 'Статистика'], ['finance', 'Финансы'], ['transfers', 'Трансферы'], ['cup', 'Кубок'], ['charts', 'Графики']];
       tabs.forEach(([k, n]) => nav.appendChild(el('button' + (this.tab === k ? '.on' : ''), { text: n, onclick: () => this.hub(k) })));
       const top = el('header.topbar', null, [
         el('div.tb-brand', { onclick: () => this.gameMenu() }, [el('span.tb-logo', { text: 'К' }), el('span', { text: 'КОМБИНАЦИЯ' })]),
@@ -238,7 +238,7 @@
       root.appendChild(top);
       const body = el('div.hub-body');
       root.appendChild(body);
-      ({ home: () => this.tabHome(body), squad: () => this.tabSquad(body), table: () => this.tabTable(body), fixtures: () => this.tabFixtures(body), stats: () => this.tabStats(body), finance: () => this.tabFinance(body), transfers: () => this.tabTransfers(body), cup: () => this.tabCup(body) })[this.tab]();
+      ({ home: () => this.tabHome(body), squad: () => this.tabSquad(body), table: () => this.tabTable(body), fixtures: () => this.tabFixtures(body), stats: () => this.tabStats(body), finance: () => this.tabFinance(body), transfers: () => this.tabTransfers(body), cup: () => this.tabCup(body), charts: () => this.tabCharts(body) })[this.tab]();
       this.show(root);
     },
 
@@ -475,6 +475,182 @@
       if (ties.length > show.length) foot.appendChild(el('button.btn.small.ghost', { text: `Все пары (${ties.length})`, onclick: () => this.hub('cup') }));
       if (left.length) foot.appendChild(el('button.btn.small', { text: `⚡ Сыграть кубок (${left.length})`, onclick: async () => { await this.simList(left, 'Кубок Англии...'); LEAGUE.save(st); this.hub(); } }));
       box.appendChild(foot);
+      return box;
+    },
+
+    /* ---------- Графики: динамика клубов по неделям ---------- */
+    tabCharts(body) {
+      const st = this.st, T = st.trk;
+      const COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500']; // проверенная палитра для тёмного фона
+      const M = {
+        bal: { n: 'Баланс', unit: 'млн £', fmt: v => G.FIN.fmtM(v) },
+        rank: { n: 'Место', unit: 'место в пирамиде лиг', inv: true },
+        pts: { n: 'Очки', unit: 'очки в сезоне', season: true },
+        val: { n: 'Стоимость состава', unit: 'млн £', fmt: v => G.FIN.fmtM(v) },
+        wage: { n: 'Зарплаты', unit: 'тыс. £ в неделю', fmt: v => `£${Math.round(v)} тыс./нед` },
+        pres: { n: 'Престиж', unit: 'престиж 1–99', fmt: v => Math.round(v) },
+        fans: { n: 'Болельщики', unit: 'настроение 0–100', fmt: v => Math.round(v) },
+        conf: { n: 'Доверие совета', unit: '%, только ваш клуб', fmt: v => Math.round(v) + '%', user: true }
+      };
+      const uc = st.userClub ? LEAGUE.club(st, st.userClub) : null;
+      const C = this.chart = this.chart || { m: 'bal', range: 'season', clubs: [], slot: {} };
+      if (!C.clubs.length) { const first = uc || LEAGUE.leagueClubs(st, this.vlg())[0]; C.clubs = [first.id]; C.slot = { [first.id]: 0 }; }
+      if (C.m === 'conf' && !uc) C.m = 'bal';
+      const wrap = el('div.charts');
+      const card = el('div.card.wide-card');
+      // показатель и период
+      const mseg = el('div.seg.wrap');
+      Object.keys(M).filter(k => !M[k].user || uc).forEach(k => mseg.appendChild(el('button' + (C.m === k ? '.on' : ''), { text: M[k].n, onclick: () => { C.m = k; this.hub('charts'); } })));
+      const rseg = el('div.seg');
+      [['season', 'Этот сезон'], ['all', 'Все сезоны']].forEach(([k, n]) => rseg.appendChild(el('button' + (C.range === k ? '.on' : ''), { text: n, onclick: () => { C.range = k; this.hub('charts'); } })));
+      card.appendChild(el('div.ch-controls', null, [mseg, rseg]));
+      if (!T || T.t.length < 2) { card.appendChild(el('div.muted', { text: 'График появится после первых недель сезона — история записывается каждую неделю.' })); wrap.appendChild(card); body.appendChild(wrap); return; }
+      // выбранные клубы: цвет закреплён за клубом, а не за порядком
+      const leg = el('div.ch-legend');
+      const sel = C.m === 'conf' ? [uc.id] : C.clubs;
+      sel.forEach(id => {
+        const c = LEAGUE.club(st, id); if (!c) return;
+        const col = COLORS[C.m === 'conf' ? 0 : C.slot[id] || 0];
+        leg.appendChild(el('span.ch-chip', null, [el('i', { style: { background: col } }), UI.cname(c), C.m !== 'conf' && C.clubs.length > 1 ? el('button.ch-x', { text: '×', title: 'Убрать', onclick: () => { C.clubs = C.clubs.filter(x => x !== id); delete C.slot[id]; this.hub('charts'); } }) : null]));
+      });
+      card.appendChild(leg);
+      // данные
+      const idx = T.t.map((t, i) => i).filter(i => C.range === 'all' || Math.floor(T.t[i] / 100) === st.season);
+      const series = sel.map(id => {
+        const s = T.c[id] || {};
+        const vals = idx.map(i => C.m === 'conf' ? T.conf[i] : (s[C.m] || [])[i]);
+        return { id, c: LEAGUE.club(st, id), col: COLORS[C.m === 'conf' ? 0 : C.slot[id] || 0], vals, tier: idx.map(i => (s.tier || [])[i]), pos: idx.map(i => (s.pos || [])[i]) };
+      });
+      const all = series.flatMap(s => s.vals).filter(v => v != null);
+      if (!all.length) { card.appendChild(el('div.muted', { text: 'Для этого показателя пока нет данных.' })); wrap.appendChild(card); body.appendChild(wrap); return; }
+      card.appendChild(this.lineChart(st, idx.map(i => T.t[i]), series, M[C.m]));
+      // таблица: сейчас / мин / макс / изменение
+      const tbl = el('table.league.ch-table');
+      tbl.appendChild(el('thead', null, [el('tr', null, ['Клуб', 'Сейчас', 'Мин.', 'Макс.', 'Изменение'].map(h => el('th', { text: h })))]));
+      const tb = el('tbody'), f = M[C.m].fmt || (v => Math.round(v));
+      series.forEach(s => {
+        const v = s.vals.filter(x => x != null);
+        if (!v.length) return;
+        const d = v[v.length - 1] - v[0], good = M[C.m].inv ? d < 0 : d > 0;
+        tb.appendChild(el('tr', null, [el('td.club', null, [el('i.ch-sw', { style: { background: s.col } }), UI.crest(s.c, 20), UI.cname(s.c)]), el('td', { text: f(v[v.length - 1]) }), el('td', { text: f(M[C.m].inv ? Math.max(...v) : Math.min(...v)) }), el('td', { text: f(M[C.m].inv ? Math.min(...v) : Math.max(...v)) }),
+          el('td', { text: d === 0 ? '—' : M[C.m].inv ? `${d < 0 ? '▲' : '▼'} ${Math.abs(d)} ${U.plural(Math.abs(d), 'место', 'места', 'мест')}` : (d > 0 ? '+' : '−') + (C.m === 'bal' || C.m === 'val' ? G.FIN.fmtM(Math.abs(d)).replace('−', '') : Math.round(Math.abs(d) * 10) / 10), style: { color: d === 0 ? '' : good ? '#0ca30c' : '#e66767' } })]));
+      });
+      tbl.appendChild(tb);
+      card.appendChild(el('div.table-scroll', null, [tbl]));
+      wrap.appendChild(card);
+      // выбор клубов для сравнения
+      if (C.m !== 'conf') {
+        const pc = el('div.card.wide-card', null, [el('h3', { text: `Сравнить клубы (до 4) · выбрано ${C.clubs.length}` })]);
+        const pl = this._chLg && st.leagues[this._chLg] ? this._chLg : (uc ? uc.league : this.vlg());
+        const seg = this.leagueSeg(pl, l => { this._chLg = l; this.hub('charts'); });
+        if (seg) pc.appendChild(seg);
+        const picker = el('div.club-picker');
+        LEAGUE.leagueClubs(st, pl).sort((a, b) => a.name.localeCompare(b.name)).forEach(c => {
+          const on = C.clubs.includes(c.id);
+          picker.appendChild(el('button' + (on ? '.on' : ''), { title: c.name, onclick: () => {
+            if (on) { if (C.clubs.length > 1) { C.clubs = C.clubs.filter(x => x !== c.id); delete C.slot[c.id]; } }
+            else if (C.clubs.length < 4) { const used = new Set(Object.values(C.slot)); let k = 0; while (used.has(k)) k++; C.clubs.push(c.id); C.slot[c.id] = k; }
+            else UI.toast('Не больше 4 клубов на одном графике');
+            this.hub('charts');
+          } }, [UI.crest(c, 26)]));
+        });
+        pc.appendChild(picker);
+        wrap.appendChild(pc);
+      }
+      body.appendChild(wrap);
+    },
+
+    /* Линейный график (SVG): сетка, границы сезонов, подписи линий, перекрестие с подсказкой */
+    lineChart(st, ts, series, meta) {
+      const NS = 'http://www.w3.org/2000/svg', W = 900, H = 330, L = 64, R = 70, Tp = 14, B = 34;
+      const mk = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+      const N = ts.length, xs = i => L + (N > 1 ? i / (N - 1) : 0.5) * (W - L - R);
+      let vals = series.flatMap(s => s.vals).filter(v => v != null), lo = Math.min(...vals), hi = Math.max(...vals);
+      if (meta.inv) { lo = 1; hi = Math.max(hi, 20); }
+      if (lo === hi) { lo -= 1; hi += 1; }
+      // «красивые» деления
+      const span = hi - lo, step0 = span / 5, mag = Math.pow(10, Math.floor(Math.log10(step0))), step = [1, 2, 2.5, 5, 10].map(k => k * mag).find(k => span / k <= 6) || mag * 10;
+      const y0 = meta.inv ? 1 : Math.floor(lo / step) * step, y1 = Math.ceil(hi / step) * step;
+      const ys = v => meta.inv ? Tp + (v - y0) / (y1 - y0) * (H - Tp - B) : H - B - (v - y0) / (y1 - y0) * (H - Tp - B);
+      const svg = mk('svg', { viewBox: `0 0 ${W} ${H}`, class: 'ch-svg', role: 'img', 'aria-label': `${meta.n}: ${series.map(s => s.c.name).join(', ')}` });
+      // полосы лиг для места в пирамиде
+      if (meta.inv) {
+        let off = 0;
+        LEAGUE.leagueIds(st).forEach((lid, k) => {
+          const n = LEAGUE.leagueClubs(st, lid).length, a = off + 1, b = off + n;
+          if (a <= y1) {
+            svg.appendChild(mk('rect', { x: L, y: ys(a - 0.5 < 1 ? 1 : a - 0.5), width: W - L - R, height: Math.max(0, ys(Math.min(b + 0.5, y1)) - ys(a - 0.5 < 1 ? 1 : a - 0.5)), fill: k % 2 ? 'rgba(255,255,255,.035)' : 'rgba(255,255,255,0)' }));
+            const t = mk('text', { x: W - R + 8, y: ys(Math.min((a + b) / 2, y1)), class: 'ch-band', 'dominant-baseline': 'middle' }); t.textContent = LEAGUE.leagueInfo(st, lid).short; svg.appendChild(t);
+          }
+          off += n;
+        });
+      }
+      // сетка и ось Y
+      const ticks = [];
+      if (meta.inv) { ticks.push(1); for (let v = 5; v <= y1; v += y1 > 40 ? 10 : 5) ticks.push(v); }
+      else for (let v = y0; v <= y1 + 1e-9; v += step) ticks.push(v);
+      for (const v of ticks) {
+        const y = ys(v);
+        svg.appendChild(mk('line', { x1: L, x2: W - R, y1: y, y2: y, class: 'ch-grid' }));
+        const t = mk('text', { x: L - 8, y, class: 'ch-tick', 'text-anchor': 'end', 'dominant-baseline': 'middle' });
+        t.textContent = meta.inv ? Math.round(v) : (Math.abs(step) >= 1 ? Math.round(v) : v.toFixed(1)); svg.appendChild(t);
+      }
+      const ul = mk('text', { x: W - R, y: H - 6, class: 'ch-tick', 'text-anchor': 'end' }); ul.textContent = meta.unit; svg.appendChild(ul);
+      // границы сезонов
+      const sOf = t => Math.floor(t / 100), sName = s => { const y = 2024 + s; return y + '/' + String(y + 1).slice(2); };
+      ts.forEach((t, i) => {
+        if (i === 0 || sOf(t) !== sOf(ts[i - 1])) {
+          const x = xs(i);
+          if (i > 0) svg.appendChild(mk('line', { x1: x, x2: x, y1: Tp, y2: H - B, class: 'ch-season' }));
+          const lb = mk('text', { x: x + 4, y: H - B + 16, class: 'ch-tick' }); lb.textContent = sName(sOf(t)); svg.appendChild(lb);
+        }
+      });
+      // линии (разрыв на пропусках и — для очков — на границе сезона)
+      series.forEach(s => {
+        let d = '', pen = false;
+        s.vals.forEach((v, i) => {
+          const brk = v == null || (meta.season && i > 0 && sOf(ts[i]) !== sOf(ts[i - 1]));
+          if (v == null) { pen = false; return; }
+          d += `${pen && !brk ? 'L' : 'M'}${xs(i).toFixed(1)},${ys(v).toFixed(1)}`; pen = true;
+        });
+        svg.appendChild(mk('path', { d, fill: 'none', stroke: s.col, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+        // подпись у конца линии
+        let li = s.vals.length - 1; while (li >= 0 && s.vals[li] == null) li--;
+        if (li >= 0 && series.length <= 4) {
+          svg.appendChild(mk('circle', { cx: xs(li), cy: ys(s.vals[li]), r: 4, fill: s.col, stroke: '#1a1430', 'stroke-width': 2 }));
+          const t = mk('text', { x: xs(li) + 8, y: ys(s.vals[li]), class: 'ch-label', 'dominant-baseline': 'middle' }); t.textContent = s.c.short; svg.appendChild(t);
+        }
+      });
+      // перекрестие и подсказка
+      const box = el('div.ch-box'), tip = el('div.ch-tip');
+      const cross = mk('line', { y1: Tp, y2: H - B, class: 'ch-cross', visibility: 'hidden' });
+      const dots = series.map(s => { const c = mk('circle', { r: 4, fill: s.col, stroke: '#1a1430', 'stroke-width': 2, visibility: 'hidden' }); svg.appendChild(c); return c; });
+      svg.appendChild(cross);
+      const hit = mk('rect', { x: L, y: Tp, width: W - L - R, height: H - Tp - B, fill: 'transparent' });
+      svg.appendChild(hit);
+      const fmt = meta.fmt || (v => Math.round(v));
+      const show = ev => {
+        const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+        const i = Math.max(0, Math.min(N - 1, Math.round((px - L) / (W - L - R) * (N - 1))));
+        cross.setAttribute('x1', xs(i)); cross.setAttribute('x2', xs(i)); cross.setAttribute('visibility', 'visible');
+        tip.innerHTML = '';
+        tip.appendChild(el('b', { text: `${sName(sOf(ts[i]))} · неделя ${ts[i] % 100}` }));
+        series.forEach((s, k) => {
+          const v = s.vals[i];
+          if (v == null) { dots[k].setAttribute('visibility', 'hidden'); return; }
+          dots[k].setAttribute('cx', xs(i)); dots[k].setAttribute('cy', ys(v)); dots[k].setAttribute('visibility', 'visible');
+          const txt = meta.inv ? `${s.pos[i]}-е · ${LEAGUE.leagueInfo(st, G.DATA.LEAGUE_ORDER[(s.tier[i] || 1) - 1]).name}` : fmt(v);
+          tip.appendChild(el('div', null, [el('i', { style: { background: s.col } }), `${s.c.short}: ${txt}`]));
+        });
+        tip.style.display = 'block';
+        const left = xs(i) / W * r.width;
+        tip.style.left = Math.min(left + 12, r.width - 200) + 'px';
+        tip.style.top = '8px';
+      };
+      hit.addEventListener('mousemove', show);
+      hit.addEventListener('touchstart', e => show(e.touches[0]), { passive: true });
+      hit.addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); dots.forEach(d => d.setAttribute('visibility', 'hidden')); tip.style.display = 'none'; });
+      box.append(svg, tip);
       return box;
     },
 
