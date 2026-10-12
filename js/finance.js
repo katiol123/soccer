@@ -42,6 +42,7 @@
         if (st.cup.winner === c.id) d += 6; else if (st.cup.runnerUp === c.id) d += 2; else if (G.CUP.reached(st, c.id) >= 4) d += 1;
       }
       if (c.fin.embargo) d -= 1;
+      if (d > 0) d *= U.clamp((100 - before) / 40, 0.15, 1);   // у вершины престиж растёт всё медленнее
       d += (PRES_BASE[Math.min(2, t - 1)] - before) * 0.05;
       c.pres = U.clamp(Math.round((before + d) * 10) / 10, 1, 99);
       changes[c.id] = c.pres - before;
@@ -335,7 +336,7 @@
     return Math.max(0.35, d);
   }
   /* Чувствительность к цене: у престижных клубов и в важных матчах болельщики готовы платить больше */
-  function elastic(H, imp) { return U.clamp(1.05 - pres(H) / 100 - imp * 0.25, 0.25, 1.2); }
+  function elastic(H, imp) { return U.clamp(1.2 - pres(H) / 120 - imp * 0.2, 0.45, 1.3); }
   function fillAt(env, m) { return U.clamp(env.dem * U.clamp(1 - env.k * (m - 1), 0.2, 1.6), 0.15, 1); }
   /* Прогноз по каждой цене: заполняемость, выручка за матч, поддержка трибун */
   function pricing(st, f) {
