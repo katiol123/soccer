@@ -118,10 +118,19 @@
     return b;
   };
 
+  /* Лицо игрока (SVG из генератора); выражение — по текущему настроению */
+  UI.face = (p, size, club) => {
+    const s = document.createElement('span');
+    s.className = 'face';
+    s.style.width = s.style.height = (size || 40) + 'px';
+    s.innerHTML = G.FACE ? G.FACE.svg(p, club) : '';
+    return s;
+  };
+
   UI.playerModal = (p, club) => {
     const content = el('div.player-card');
     const head = el('div.pc-head', null, [
-      el('div.pc-num', { text: p.num, style: { background: club.c1, color: GFX.isLight(club.c1) ? '#111' : '#fff' } }),
+      el('div.pc-facewrap', null, [UI.face(p, 92, club), el('div.pc-num', { text: p.num, style: { background: club.c1, color: GFX.isLight(club.c1) ? '#111' : '#fff' } })]),
       el('div', null, [el('div.pc-name', { text: p.name }), el('div.pc-sub', { text: `${posName(p.pos)} · ${p.role} · ${p.age} ${U.plural(p.age, 'год', 'года', 'лет')}${p.star ? ' · ★ звезда' : ''}` })]),
       el('div.pc-ovr', null, [el('b', { text: UI.ovr(p).toFixed(1) }), el('small', { text: 'рейтинг' })])
     ]);
@@ -271,7 +280,7 @@
       model.getBench().forEach(p => {
         const fit = p.m ? p.m.fit : p.fit;
         const b = el('button.bench-p' + (selected && selected.kind === 'bench' && selected.p === p ? '.sel' : ''), { onclick: () => clickBench(p) }, [
-          el('span.bp-pos', { text: UI.posShort(p.pos) }), el('span.bp-name', { text: p.name }), UI.traitIcons(p), UI.formBadge(p), el('span.bp-ovr', { text: UI.ovr(p).toFixed(1), style: { color: U.attrColor(UI.ovr(p)) } }), UI.fitBar(fit)
+          el('span.bp-pos', { text: UI.posShort(p.pos) }), UI.face(p, 22, model.club || null), el('span.bp-name', { text: p.name }), UI.traitIcons(p), UI.formBadge(p), el('span.bp-ovr', { text: UI.ovr(p).toFixed(1), style: { color: U.attrColor(UI.ovr(p)) } }), UI.fitBar(fit)
         ]);
         bl.appendChild(b);
       });

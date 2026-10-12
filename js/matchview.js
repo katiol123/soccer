@@ -516,7 +516,7 @@
     content.appendChild(gl);
     const all = H.club.players.concat(A.club.players).filter(p => p.m && p.m.played);
     const motm = all.slice().sort((a, b) => (b.m.rating || 0) - (a.m.rating || 0))[0];
-    if (motm) content.appendChild(el('div.ft-motm', null, [el('small', { text: 'Игрок матча' }), el('b', { text: `${motm.name} — ${motm.m.rating}` })]));
+    if (motm) content.appendChild(el('div.ft-motm', null, [UI.face(motm, 54, motm.m.side === 'home' ? H.club : A.club), el('div', null, [el('small', { text: 'Игрок матча' }), el('b', { text: `${motm.name} — ${motm.m.rating}` })])]));
     const cols = el('div.ft-ratings');
     for (const ts of [H, A]) {
       const col = el('div.ft-col', null, [el('h4', { text: ts.club.name })]);

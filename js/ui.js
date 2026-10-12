@@ -1617,7 +1617,7 @@
       const tb = el('tbody');
       club.players.slice().sort((a, b) => a.contract - b.contract || b.wage - a.wage).forEach(p => {
         const tr = el('tr', { onclick: () => UI.playerModal(p, club) }, [
-          el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]), el('td.pname', null, [p.name + (p.star ? ' ★ ' : ' '), UI.traitIcons(p)]), el('td', { text: p.age }),
+          el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]), el('td.pname', null, [UI.face(p, 24, club), ' ' + p.name + (p.star ? ' ★ ' : ' '), UI.traitIcons(p)]), el('td', { text: p.age }),
           el('td', null, [el('b', { text: TAC.overall(p).toFixed(1), style: { color: U.attrColor(TAC.overall(p)) } })]), el('td', null, [UI.formBadge(p)]), el('td', { text: G.FIN.moodLabel(p.mood == null ? 60 : p.mood)[1], title: G.FIN.moodLabel(p.mood == null ? 60 : p.mood)[0] }),
           el('td', { text: G.FIN.fmtM(G.FIN.value(p)) }), el('td', { text: G.FIN.fmtW(p.wage) }),
           el('td' + (p.contract <= 1 ? '.ctr-warn' : ''), { text: p.contract <= 1 ? 'истекает летом' : `${p.contract} ${U.plural(p.contract, 'сезон', 'сезона', 'сезонов')}` }),
