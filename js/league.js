@@ -236,7 +236,7 @@
       for (const p of ts.club.players) {
         if (!p.m || !p.m.played) continue;
         if (p.m.played) {
-          if (fixture.cup) { const cs = p.cst || (p.cst = { apps: 0, goals: 0, assists: 0 }); cs.apps++; cs.goals += p.m.goals; cs.assists += p.m.assists; }
+          if (fixture.cup) { const cs = p.cst || (p.cst = { apps: 0, goals: 0, assists: 0, rsum: 0 }); cs.apps++; cs.goals += p.m.goals; cs.assists += p.m.assists; cs.rsum = (cs.rsum || 0) + (p.m.rating || 6.5); }
           else {
             p.st.apps++; p.st.goals += p.m.goals; p.st.assists += p.m.assists;
             p.st.yc += p.m.yc; p.st.rsum += p.m.rating || 6.5;
@@ -426,9 +426,11 @@
 
   /* Развитие игрока за межсезонье: возраст + средняя оценка + игровое время */
   function develop(p) {
-    const apps = p.st.apps, avg = apps ? p.st.rsum / apps : null;
+    // кубковые матчи тоже идут в зачёт: в игровое время — с коэффициентом 0.8
+    const capps = p.cst ? p.cst.apps : 0, crs = p.cst ? (p.cst.rsum || capps * 6.5) : 0;
+    const apps = p.st.apps + capps, avg = apps ? (p.st.rsum + crs) / apps : null;
     const grade = apps < 5 ? 'few' : avg > 7.0 ? 'good' : avg < 6.3 ? 'bad' : 'ok';
-    const play = U.clamp(apps / 19, 0.25, 1);
+    const play = U.clamp((p.st.apps + capps * 0.8) / 19, 0.25, 1);
     const pro = p.h ? p.h.pro : 10;
     const loanK = p.loanExp >= 15 ? 1.25 : p.loanExp >= 8 ? 1.1 : 1; // практика в аренде ускоряет рост
     // потенциал: чем больше запас до потолка, тем быстрее растут молодые

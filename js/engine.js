@@ -72,6 +72,21 @@
       p.m = { side, fit: p.fit, perf: 0, goals: 0, assists: 0, yc: 0, rc: false, off: false, inj: false, played: false, saves: 0, shift: 0 };
       if (TRAITS.has(p, 'inconsistent')) p.m.shift = U.rnd() < 0.5 ? 2 : -2;
       p.m.formB = TAC.formBonus(p);
+      // настроение: влияет не на мастерство (за него отвечает форма), а на поведение
+      const mood = p.mood == null ? 60 : p.mood, tem = p.h ? p.h.tem : 10;
+      p.m.mood = mood;
+      if (mood < 35 && !p.m.shift) p.m.shift = U.rnd() < 0.5 ? 1 : -1;       // нестабильность: может и блеснуть, и провалиться
+      p.m.hot = mood < 35 && tem >= 12 ? 1 + (tem - 11) * 0.08 : 1;          // обиженный вспыльчивый чаще фолит
+    }
+    /* Командный множитель фолов от обиженных вспыльчивых игроков на поле */
+    hotK(side) { const ps = this.t[side].onPitch.filter(x => x.p); return ps.length ? ps.reduce((a, x) => a + (x.p.m.hot || 1), 0) / ps.length : 1; }
+    /* Самоотдача без мяча (отбор, позиционная игра): счастливые бьются, обиженные «выключаются» при плохом счёте */
+    effort(p) {
+      const mood = p.m.mood;
+      if (mood == null) return 0;
+      let e = mood >= 80 ? 0.75 : mood < 20 ? -1.5 : mood < 35 ? -1 : 0;
+      if (mood < 35 && this.score[OTHER(p.m.side)] - this.score[p.m.side] >= 2) e -= 0.75;
+      return e;
     }
 
     constructor(cfg) {
@@ -169,6 +184,7 @@
       if (p.m && p.m.shift) v += p.m.shift;
       if (p.m && p.m.formB) v += p.m.formB;
       if (this.wx.attr[k]) v += this.wx.attr[k];
+      if (p.m && (k === 'tac' || k === 'pos')) v += this.effort(p);
       return U.clamp(v, 1, 22);
     }
     /* Командный множитель (произведение по игрокам на поле) */
@@ -465,7 +481,7 @@
         const tacV = this.val(side, 'tac', ph), comV = this.val(side, 'com', ph);
         let fp = CFG.foulBase * (c[4] / 3) * (1 + (11 - tacV) / 14) * (1 + (11 - comV) / 20) * [0.8, 1, 1.25][me.tac.pressing];
         if (step.groups.some(g => g.t === 4 && g.size >= 4)) fp *= 1.8;
-        fp *= this.tmul(side, 'foul') * this.tmul(aSide, 'oppFoul');
+        fp *= this.tmul(side, 'foul') * this.tmul(aSide, 'oppFoul') * this.hotK(side);
         if (U.rnd() < U.clamp(fp, 0, 0.4)) {
           this.foul(side, ph, fx, ctx);
           return;
@@ -557,15 +573,15 @@
       const me = this.t[side], aSide = OTHER(side), opp = this.t[aSide];
       me.st.fouls++;
       const list = me.onPitch.filter(x => x.p && x.slot.role !== 'GK');
-      const fouler = U.pickWeighted(list, x => (TAC.ROLES[x.slot.role].w[ph] + 0.05) * (22 - this.pa(x.p, 'tac')) * (22 - this.pa(x.p, 'com')) * this.pm(x.p, 'foulW')).p;
+      const fouler = U.pickWeighted(list, x => (TAC.ROLES[x.slot.role].w[ph] + 0.05) * (22 - this.pa(x.p, 'tac')) * (22 - this.pa(x.p, 'com')) * this.pm(x.p, 'foulW') * (x.p.m.hot || 1)).p;
       const victim = this.pickPlayer(aSide, 'dri', PHASE(this.rp(aSide)));
       me.pressure = 0;
       ctx.stopped = true;
       fx.push({ k: 'event', text: 'ФОЛ!' });
       const arp = this.rp(aSide);
       let card = null;
-      const cardP = 0.3 + (10 - this.pa(fouler, 'com')) * 0.015 + (arp >= 3 ? 0.1 : 0) + (this.counter && this.counter.side === aSide ? 0.15 : 0) + this.padd(fouler, 'cardP');
-      if (U.rnd() < 0.012 * this.pm(fouler, 'redP')) card = 'red';
+      const cardP = 0.3 + (10 - this.pa(fouler, 'com')) * 0.015 + (arp >= 3 ? 0.1 : 0) + (this.counter && this.counter.side === aSide ? 0.15 : 0) + this.padd(fouler, 'cardP') + ((fouler.m.hot || 1) - 1) * 0.15;
+      if (U.rnd() < 0.012 * this.pm(fouler, 'redP') * (fouler.m.hot || 1)) card = 'red';
       else if (U.rnd() < cardP) card = fouler.m.yc >= 1 ? 'red2' : 'yellow';
       if (this.log || card) {
         const where = arp === 4 ? 'в штрафной' : arp === 3 ? 'у штрафной' : '';
