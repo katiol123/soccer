@@ -307,7 +307,7 @@
       promote: 2, playoff: [3, 6], relegate: 3, fin: { tvEqual: 16, tvMerit: 0.5, euro: [], ticketK: 0.65, commK: 0.55, opsK: 0.42, parachute: [40, 30], bal: [10, 8, 9] },
       zones: { up: 2, po: 6, rel: 3 } },
     eng3: { id: 'eng3', name: 'Первая лига', acc: 'Первую лигу', short: 'L1', country: 'Англия', flag: '🏴', tier: 3, clubs: CLUBS3, coaches: COACHES3,
-      promote: 2, playoff: [3, 6], relegate: 0, fin: { tvEqual: 6.5, tvMerit: 0.15, euro: [], ticketK: 0.95, commK: 1.2, opsK: 0.5, bal: [6, 3, 7.5] },
+      promote: 2, playoff: [3, 6], relegate: 0, fin: { tvEqual: 8, tvMerit: 0.15, euro: [], ticketK: 0.95, commK: 1.2, opsK: 0.5, bal: [6, 3, 7.5] },
       zones: { up: 2, po: 6 } }
   };
   const LEAGUE_ORDER = ['eng1', 'eng2', 'eng3'];

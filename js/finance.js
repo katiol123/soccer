@@ -168,13 +168,15 @@
       if (!c.fin) continue;
       const L = debtLimit(c), me = c.id === st.userClub;
       if (!c.fin.embargo && c.fin.balance < -L) {
-        c.fin.embargo = true; c.fin.transferBudget = 0;
+        c.fin.embargo = true; c.fin.transferBudget = 0; c.fin.embSince = st.season;
         st.news.push({ r: st.round, text: `⛔ «${c.name}»: долг превысил ${fmtM(L)} — лига запрещает клубу регистрировать новых игроков.${me ? ` Можно подписывать только свободных агентов с зарплатой до £${EMB_WAGE} тыс./нед.` : ''}` });
       } else if (c.fin.embargo && c.fin.balance > -L / 2) {
         c.fin.embargo = false;
         if (me) st.news.push({ r: st.round, text: `✅ Запрет на регистрацию игроков снят: финансы «${c.name}» снова под контролем.` });
       }
-      if (c.fin.balance < -3 * L && !(c.fin.ownLeft > 0.05)) administration(st, c, final);
+      // хронический запрет (два сезона и больше) — кредиторы теряют терпение раньше
+      const chronic = final && c.fin.embargo && st.season - (c.fin.embSince || st.season) >= 1;
+      if (!(c.fin.ownLeft > 0.05) && (c.fin.balance < -3 * L || (chronic && c.fin.balance < -2 * L))) administration(st, c, final);
     }
   }
   function administration(st, c, final) {
@@ -187,7 +189,7 @@
     c.own = rollOwner(Math.random, 8);
     c.fin.ownLeft = ownerCap(c);
     c.fin.admin = (c.fin.admin || 0) + 1;
-    c.fin.embargo = true; c.fin.transferBudget = 0;
+    c.fin.embargo = true; c.fin.transferBudget = 0; c.fin.embSince = st.season + (final ? 1 : 0);
     c.players.forEach(p => { p.wage = Math.round(p.wage * 0.8); p.mood = Math.max(0, (p.mood == null ? 60 : p.mood) - 15); });
     // администраторы выставляют на продажу самых дорогих игроков
     const top = c.players.slice().sort((a, b) => value(b) - value(a)).slice(0, 2);
@@ -256,12 +258,23 @@
   function matchday(st, fixture, table) {
     const club = st.clubs.find(c => c.id === fixture.h);
     if (!club || !club.fin) return;
+    if (fixture.cup) return cupGate(st, fixture, club, st.clubs.find(c => c.id === fixture.a));
     const N = table ? table.length : 20;
     const pos = table ? table.findIndex(r => r.id === club.id) + 1 : N / 2;
     const att = U.clamp(0.82 + (N - pos) * 0.008 * 20 / N + U.rnd() * 0.05 + (fixture.po ? 0.15 : 0), 0.7, 1);
     const gate = (club.cap || CAPACITY[club.id] || 30) * att * ticket(club) / 1000;
     book(club, 'gate', Math.round(gate * 100) / 100);
     fixture.res.att = Math.round((club.cap || CAPACITY[club.id] || 30) * att * 1000);
+  }
+
+  /* Кубок: выручка делится между клубами (55/45, на «Уэмбли» — поровну); выезд к клубу выше классом собирает аншлаг */
+  function cupGate(st, f, H, A) {
+    const cap = f.neutral ? 90 : (H.cap || CAPACITY[H.id] || 30);
+    const att = f.neutral ? U.clamp(0.8 + U.rnd() * 0.2, 0.8, 1) : U.clamp(0.72 + (tierOf(H) - tierOf(A)) * 0.1 + U.rnd() * 0.1, 0.55, 1);
+    const price = f.neutral ? 60 : ticket(H) * 0.85;
+    const gate = Math.round(cap * att * price / 1000 * 100) / 100, hs = f.neutral ? 0.5 : 0.55;
+    book(H, 'gate', gate * hs); if (A && A.fin) book(A, 'gate', gate * (1 - hs));
+    f.res.att = Math.round(cap * att * 1000);
   }
 
   /* Каждую неделю календаря: телеправа (равная доля) и «парашют», спонсоры, зарплаты, операционные расходы.
@@ -302,7 +315,7 @@
     const played = table[0].p;
     if (played < 3) return;
     // неделя без матча (пауза в лиге, плей-офф) — доверие не меняется
-    if (!G.LEAGUE.weekFixtures(st).some(f => !f.po && (f.h === st.userClub || f.a === st.userClub))) return;
+    if (!G.LEAGUE.weekFixtures(st).some(f => !f.po && !f.cup && (f.h === st.userClub || f.a === st.userClub))) return;
     let d = (b.target - pos) * 0.15 * 20 / table.length * 38 / G.LEAGUE.roundsTotal(st);
     if (club.fin.balance < 0) d -= 1.5;
     if (wageBill(club) > club.fin.wageBudget) d -= 1;
@@ -402,7 +415,7 @@
     rd.forEach(f => {
       played.add(f.h); played.add(f.a);
       if (!f.res) return;
-      const w = G.LEAGUE.winner(f), d = f.res.hs !== f.res.as ? Math.sign(f.res.hs - f.res.as) : f.po ? (w === f.h ? 1 : -1) : 0;
+      const w = G.LEAGUE.winner(f), d = f.res.hs !== f.res.as ? Math.sign(f.res.hs - f.res.as) : (f.po || f.cup) ? (w === f.h ? 1 : -1) : 0;
       res[f.h] = d; res[f.a] = -d;
     });
     for (const c of st.clubs) {

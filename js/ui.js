@@ -213,7 +213,7 @@
       const uc = st.userClub ? LEAGUE.club(st, st.userClub) : null;
       if (uc) { root.style.setProperty('--c1', uc.c1); root.style.setProperty('--c2', uc.c2); }
       const nav = el('nav.hub-nav');
-      const tabs = [['home', 'Главная'], ['squad', uc ? 'Состав и тактика' : 'Клубы'], ['table', 'Таблица'], ['fixtures', 'Календарь'], ['stats', 'Статистика'], ['finance', 'Финансы'], ['transfers', 'Трансферы']];
+      const tabs = [['home', 'Главная'], ['squad', uc ? 'Состав и тактика' : 'Клубы'], ['table', 'Таблица'], ['fixtures', 'Календарь'], ['stats', 'Статистика'], ['finance', 'Финансы'], ['transfers', 'Трансферы'], ['cup', 'Кубок']];
       tabs.forEach(([k, n]) => nav.appendChild(el('button' + (this.tab === k ? '.on' : ''), { text: n, onclick: () => this.hub(k) })));
       const top = el('header.topbar', null, [
         el('div.tb-brand', { onclick: () => this.gameMenu() }, [el('span.tb-logo', { text: 'К' }), el('span', { text: 'КОМБИНАЦИЯ' })]),
@@ -224,7 +224,7 @@
       root.appendChild(top);
       const body = el('div.hub-body');
       root.appendChild(body);
-      ({ home: () => this.tabHome(body), squad: () => this.tabSquad(body), table: () => this.tabTable(body), fixtures: () => this.tabFixtures(body), stats: () => this.tabStats(body), finance: () => this.tabFinance(body), transfers: () => this.tabTransfers(body) })[this.tab]();
+      ({ home: () => this.tabHome(body), squad: () => this.tabSquad(body), table: () => this.tabTable(body), fixtures: () => this.tabFixtures(body), stats: () => this.tabStats(body), finance: () => this.tabFinance(body), transfers: () => this.tabTransfers(body), cup: () => this.tabCup(body) })[this.tab]();
       this.show(root);
     },
 
@@ -247,13 +247,28 @@
 
     /* Решение тренера соперника кэшируется на тур, чтобы скаут-отчёт совпадал с матчем */
     oppPlan(f, opp, uc, home) {
-      const key = this.st.season + ':' + this.st.round + ':' + opp.id;
-      if (!this._pred || this._pred.key !== key) this._pred = { key, tac: AI.prepare(opp, uc, home) };
+      const key = this.st.season + ':' + this.st.round + ':' + opp.id + (f.cup ? ':cup' : '');
+      if (!this._pred || this._pred.key !== key) this._pred = { key, tac: AI.prepare(opp, uc, home, f.cup ? { cup: f } : null) };
       return this._pred.tac;
     },
 
     roundFixtures(lid) { const st = this.st; return st.leagues[lid || st.lg].fixtures[st.round] || []; },
-    userFixture() { const u = this.st.userClub; return u ? this.roundFixtures().find(f => f.h === u || f.a === u) || null : null; },
+    /* Матч пользователя на этой неделе: сначала кубок (середина недели), потом лига */
+    userFixture() {
+      const st = this.st, u = st.userClub;
+      if (!u) return null;
+      const ct = (G.CUP ? G.CUP.weekTies(st) : []).find(f => f.h === u || f.a === u);
+      if (ct && !ct.res) return ct;
+      return this.roundFixtures().find(f => f.h === u || f.a === u) || ct || null;
+    },
+    /* Тактика пользователя на матч: в кубке — отдельная копия (можно выставить резерв, не трогая основу) */
+    userTac(f) {
+      const st = this.st;
+      if (!f || !f.cup) return st.userTactics;
+      const key = st.season + ':' + st.round;
+      if (!st.cupTac || st.cupTac.key !== key) { LEAGUE.fixUserTactics(st); st.cupTac = { key, tac: JSON.parse(JSON.stringify(st.userTactics)) }; }
+      return st.cupTac.tac;
+    },
     /* Лига, которую просматривает пользователь (таблица, календарь, статистика, матчи недели) */
     vlg() { const st = this.st; return this._vlg && st.leagues[this._vlg] ? this._vlg : st.lg; },
     leagueSeg(cur, onPick) {
@@ -311,12 +326,11 @@
       const opp = uc === home ? away : home;
       const isHome = uc === home;
       const pred = this.oppPlan(f, opp, uc, !isHome);
-      const table = LEAGUE.standings(st, uc.league);
-      const pos = id => table.findIndex(r => r.id === id) + 1;
+      const pos = id => { const c = LEAGUE.club(st, id), t = LEAGUE.standings(st, c.league); return (t.findIndex(r => r.id === id) + 1) + (f.cup ? ` (${LEAGUE.leagueInfo(st, c.league).short})` : ''); };
       const card = el('div.card.next-match');
       card.style.setProperty('--h', home.c1); card.style.setProperty('--a', away.c1);
       card.append(
-        el('div.nm-label', { text: `${LEAGUE.leagueInfo(st).name} · ${LEAGUE.weekLabel(st)} · ${f.po === 'final' ? 'стадион «Уэмбли»' : home.stadium}` }),
+        el('div.nm-label', { text: f.cup ? `🏆 ${G.CUP.NAME} · ${G.CUP.roundName(st, f)} · ${f.neutral ? 'стадион «Уэмбли»' : home.stadium}` : `${LEAGUE.leagueInfo(st).name} · ${LEAGUE.weekLabel(st)} · ${f.po === 'final' ? 'стадион «Уэмбли»' : home.stadium}` }),
         el('div.nm-teams', null, [
           el('div.nm-t', null, [UI.crest(home, 72), el('b', { text: home.name }), el('small', { text: `${pos(home.id)} место · ${TAC.teamRating(home).toFixed(1)}` })]),
           el('div.nm-vs', { text: 'VS' }),
@@ -341,10 +355,13 @@
       const card = el('div.card.round');
       const allDone = rd.every(f => f.res);
       card.appendChild(el('div.round-h', null, [el('h3', { text: `Неделя ${st.round + 1} · ${LEAGUE.weekLabel(st, lid)}` }), el('small', { text: !rd.length ? 'В этой лиге матчей нет' : allDone ? 'Все матчи сыграны' : 'Смотрите любой матч ИИ вживую или симулируйте' })]));
+      const cupBox = this.cupWeekBox();
+      if (cupBox) card.appendChild(cupBox);
       const seg = this.leagueSeg(lid);
       if (seg) card.appendChild(seg);
       const list = el('div.fixtures');
       if (!rd.length) list.appendChild(el('div.muted', { text: 'Пауза в календаре этой лиги.' }));
+      const myCup = st.userClub && (G.CUP ? G.CUP.weekTies(st) : []).find(f => !f.res && (f.h === st.userClub || f.a === st.userClub));
       const tbl = LEAGUE.standings(st, lid), place = id => tbl.findIndex(r => r.id === id) + 1;
       rd.forEach(f => {
         const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a);
@@ -357,7 +374,8 @@
         );
         const acts = el('div.fx-act');
         if (!f.res) {
-          if (mine) acts.appendChild(el('button.btn.small.primary', { text: 'Играть', onclick: () => this.prematch(f) }));
+          if (mine && myCup) acts.appendChild(el('button.btn.small', { text: 'После кубка', disabled: true, title: 'Сначала сыграйте кубковый матч середины недели' }));
+          else if (mine) acts.appendChild(el('button.btn.small.primary', { text: 'Играть', onclick: () => this.prematch(f) }));
           else {
             acts.appendChild(el('button.btn.small', { text: '👁 Смотреть', onclick: () => this.watchMatch(f) }));
             acts.appendChild(el('button.btn.small.ghost', { text: '⚡', title: 'Быстрая симуляция', onclick: () => { this.simFixture(f); LEAGUE.save(st); this.hub(); } }));
@@ -370,9 +388,9 @@
       });
       card.appendChild(list);
       const foot = el('div.round-foot');
-      const uf = this.userFixture();
-      const remainingAI = rd.filter(f => !f.res && f !== uf);
-      if (remainingAI.length) foot.appendChild(el('button.btn', { text: `⚡ Симулировать ${remainingAI.length === rd.length - (uf ? 1 : 0) ? 'тур' : 'остальные'} (${remainingAI.length})`, onclick: () => this.simRemaining(lid) }));
+      const uf = this.userFixture(), isMine = f => st.userClub && (f.h === st.userClub || f.a === st.userClub);
+      const remainingAI = rd.filter(f => !f.res && !isMine(f));
+      if (remainingAI.length) foot.appendChild(el('button.btn', { text: `⚡ Симулировать ${remainingAI.length === rd.filter(f => !isMine(f)).length ? 'тур' : 'остальные'} (${remainingAI.length})`, onclick: () => this.simRemaining(lid) }));
       if (!uf || uf.res) {
         const left = LEAGUE.weekFixtures(st).filter(f => !f.res).length;
         foot.appendChild(el('button.btn.primary.big', { text: st.round + 1 >= LEAGUE.weeks(st) ? 'Завершить сезон 🏆' : 'Следующая неделя →', title: left ? `Несыгранные матчи недели во всех лигах (${left}) будут досимулированы` : '', onclick: () => this.nextRound() }));
@@ -381,9 +399,74 @@
       return card;
     },
 
+    /* Кубковые матчи недели на главной: свой матч и самые громкие пары */
+    cupWeekBox() {
+      const st = this.st, ties = G.CUP ? G.CUP.weekTies(st) : [];
+      if (!ties.length) return null;
+      const R = G.CUP.roundAt(st, st.round), u = st.userClub;
+      const lv = f => G.FIN.level(LEAGUE.club(st, f.h)) + G.FIN.level(LEAGUE.club(st, f.a));
+      const show = ties.slice().sort((a, b) => ((b.h === u || b.a === u) - (a.h === u || a.a === u)) || lv(a) - lv(b)).slice(0, 6);
+      const box = el('div.cup-box', null, [el('div.cup-h', null, [el('b', { text: `🏆 ${G.CUP.NAME} · ${R.name}` }), el('small.muted', { text: 'середина недели — до матчей лиги' })])]);
+      const lg = c => LEAGUE.leagueInfo(st, c.league).short;
+      show.forEach(f => {
+        const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a), mine = u && (f.h === u || f.a === u);
+        const acts = el('div.fx-act');
+        if (!f.res) {
+          if (mine) acts.appendChild(el('button.btn.small.primary', { text: 'Играть', onclick: () => this.prematch(f) }));
+          else acts.append(el('button.btn.small', { text: '👁', title: 'Смотреть', onclick: () => this.watchMatch(f) }), el('button.btn.small.ghost', { text: '⚡', title: 'Быстрая симуляция', onclick: () => { this.simFixture(f); LEAGUE.save(st); this.hub(); } }));
+        } else acts.appendChild(el('button.btn.small.ghost', { text: 'Отчёт', onclick: () => this.report(f) }));
+        box.appendChild(el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''), null, [
+          el('div.fx-t.h', null, [el('span', null, [h.name, el('small.fx-pos', { text: ` (${lg(h)})` })]), UI.crest(h, 24)]),
+          el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –' }),
+          el('div.fx-t.a', null, [UI.crest(a, 24), el('span', null, [a.name, el('small.fx-pos', { text: ` (${lg(a)})` })])]), acts]));
+      });
+      const left = ties.filter(f => !f.res && !(u && (f.h === u || f.a === u)));
+      const foot = el('div.cup-foot');
+      if (ties.length > show.length) foot.appendChild(el('button.btn.small.ghost', { text: `Все пары (${ties.length})`, onclick: () => this.hub('cup') }));
+      if (left.length) foot.appendChild(el('button.btn.small', { text: `⚡ Сыграть кубок (${left.length})`, onclick: async () => { await this.simList(left, 'Кубок Англии...'); LEAGUE.save(st); this.hub(); } }));
+      box.appendChild(foot);
+      return box;
+    },
+
+    /* Вкладка «Кубок»: все раунды, пары и результаты */
+    tabCup(body) {
+      const st = this.st, cup = st.cup, u = st.userClub;
+      const card = el('div.card.wide-card');
+      if (!cup || cup.season !== st.season) { card.append(el('h3', { text: G.CUP.NAME }), el('div.muted', { text: 'Кубок стартует со следующего сезона.' })); body.appendChild(card); return; }
+      card.appendChild(el('h3', { text: `${G.CUP.NAME} ${st.seasonName}` }));
+      let status = '';
+      if (u) {
+        const all = cup.rounds.flatMap(r => r.ties.map(f => ({ f, r })));
+        const mineT = all.filter(x => x.f.h === u || x.f.a === u), last = mineT[mineT.length - 1];
+        if (cup.winner === u) status = '🏆 Вы — обладатель Кубка Англии!';
+        else if (!last) status = `Ваш клуб вступит в борьбу в раунде «${cup.rounds[1] ? cup.rounds[1].name : cup.rounds[0].name}».`;
+        else if (last.f.res && LEAGUE.winner(last.f) !== u) status = `Вы выбыли: ${last.r.name}.`;
+        else status = last.f.res ? 'Вы прошли дальше — ждём жеребьёвку.' : `Ваш матч: ${last.r.name}, неделя ${last.r.week + 1}.`;
+      }
+      if (status) card.appendChild(el('div.cup-status', { text: status }));
+      card.appendChild(el('div.muted.small-note', { text: 'Матчи на выбывание, ничья — серия пенальти. Клубы Премьер-лиги и Чемпионшипа вступают в 3-м раунде. Полуфиналы и финал — на «Уэмбли». Призовые за каждый раунд и выручка от билетов — обоим клубам.' }));
+      cup.rounds.slice().reverse().forEach(R => {
+        const sec = el('div.cup-round', null, [el('h4', { text: `${R.name} · неделя ${R.week + 1}${R.ties.length ? '' : ' · жеребьёвка впереди'}` })]);
+        const ties = R.ties.slice().sort((a, b) => ((b.h === u || b.a === u) - (a.h === u || a.a === u)));
+        ties.forEach(f => {
+          const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a), w = LEAGUE.winner(f), mine = u && (f.h === u || f.a === u);
+          sec.appendChild(el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''), { onclick: () => f.res && this.report(f) }, [
+            el('div.fx-t.h' + (w === h.id ? '.win' : ''), null, [el('span', null, [h.name, el('small.fx-pos', { text: ` (${LEAGUE.leagueInfo(st, h.league).short})` })]), UI.crest(h, 22)]),
+            el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –' }),
+            el('div.fx-t.a' + (w === a.id ? '.win' : ''), null, [UI.crest(a, 22), el('span', null, [a.name, el('small.fx-pos', { text: ` (${LEAGUE.leagueInfo(st, a.league).short})` })])])]));
+        });
+        if (R.ties.length || R === cup.rounds[cup.rounds.length - 1]) card.appendChild(sec);
+      });
+      const wins = (st.history || []).filter(h => h.cup).slice(-6).reverse();
+      if (wins.length) card.appendChild(el('div.cup-round', null, [el('h4', { text: 'Обладатели' })].concat(wins.map(h => { const c = LEAGUE.club(st, h.cup); return el('div.mini-row', null, [el('span.pos', { text: h.season }), UI.crest(c, 18), el('span.nm', { text: c.name })]); }))));
+      body.appendChild(card);
+    },
+
     async simRemaining(lid) {
-      const rd = this.roundFixtures(lid), uf = this.userFixture();
-      await this.simList(rd.filter(f => !f.res && f !== uf));
+      const rd = this.roundFixtures(lid), u = this.st.userClub, mine = f => f.h === u || f.a === u;
+      // сначала кубок середины недели, затем лига
+      const cup = (G.CUP ? G.CUP.weekTies(this.st) : []).filter(f => !f.res && !mine(f));
+      await this.simList(cup.concat(rd.filter(f => !f.res && !mine(f))));
       LEAGUE.save(this.st);
       this.hub();
     },
@@ -408,9 +491,8 @@
       const st = this.st, h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a);
       const uc = st.userClub;
       const tacFor = (club, opp, home) => {
-        if (club.id === uc && !(opts && opts.assistant)) return st.userTactics;
-        if (club.id === uc) return st.userTactics;
-        return AI.prepare(club, opp, home);
+        if (club.id === uc) return this.userTac(f);
+        return AI.prepare(club, opp, home, f.cup ? { cup: f } : null);
       };
       const ht = opts && opts.homeTac || tacFor(h, a, true), at = opts && opts.awayTac || tacFor(a, h, false);
       return new ENGINE.Match({
@@ -483,13 +565,23 @@
       root.style.setProperty('--c1', uc.c1);
       const header = el('div.pm-head', null, [
         el('button.icon-btn', { text: '←', onclick: () => this.hub('home') }),
-        el('div.pm-title', null, [UI.crest(LEAGUE.club(st, f.h), 40), el('h2', { text: `${LEAGUE.club(st, f.h).name} — ${LEAGUE.club(st, f.a).name}` }), UI.crest(LEAGUE.club(st, f.a), 40)]),
+        el('div.pm-title', null, [UI.crest(LEAGUE.club(st, f.h), 40), el('h2', { text: `${f.cup ? '🏆 ' : ''}${LEAGUE.club(st, f.h).name} — ${LEAGUE.club(st, f.a).name}` }), UI.crest(LEAGUE.club(st, f.a), 40)]),
         el('button.btn.primary.big', { text: 'На поле ▶', onclick: () => this.playUserMatch(f, oppTac) })
       ]);
       root.appendChild(header);
       const body = el('div.pm-body');
       const mine = el('div.card.pm-mine', null, [el('h3', { text: 'Ваша тактика' })]);
-      mine.appendChild(UI.TacticsEditor(UI.prematchModel(uc, st.userTactics)));
+      const myTac = this.userTac(f);
+      if (f.cup) {
+        mine.appendChild(el('div.cup-tools', null, [
+          el('small.muted', { text: `${G.CUP.NAME}, ${G.CUP.roundName(st, f)}: состав на кубок отдельный — основа на лигу не меняется.` }),
+          el('div.cup-btns', null, [
+            el('button.btn.small', { text: '🔄 Резерв от ассистента', title: 'Ассистент даст отдых сильнейшим и самым уставшим', onclick: () => { const k = f.neutral ? 0 : Math.max(3, G.CUP.rotation(uc, opp, f)); const ex = AI.cupRest(uc, opp, f, k) || new Set(); const xi = TAC.bestXI(uc, myTac.formation, { exclude: ex }); myTac.lineup = xi.lineup; myTac.bench = xi.bench; this.prematch(f); } }),
+            el('button.btn.small.ghost', { text: '↺ Основной состав', onclick: () => { st.cupTac = null; this.prematch(f); } })
+          ])
+        ]));
+      }
+      mine.appendChild(UI.TacticsEditor(UI.prematchModel(uc, myTac)));
       const theirs = el('div.card.pm-opp', null, [el('h3', { text: `Соперник: ${opp.name}` })]);
       theirs.appendChild(el('div.pm-coach', null, [el('b', { text: `${opp.coach.name} (${opp.coach.nat})` }), el('p', { text: opp.coach.motto })]));
       theirs.appendChild(el('div.cd-tags', null, [el('span', { text: oppTac.formation }), el('span', { text: TAC.PLANS[oppTac.plan].icon + ' ' + TAC.PLANS[oppTac.plan].n }), el('span', { text: 'Менталитет: ' + TAC.MENTALITY[oppTac.mentality] }), el('span', { text: 'Прессинг: ' + TAC.PRESSING[oppTac.pressing] }), el('span', { text: 'Линия: ' + TAC.LINE[oppTac.line] })]));
@@ -513,7 +605,8 @@
 
     async playUserMatch(f, oppTac) {
       const st = this.st;
-      const valid = st.userTactics.lineup.filter(Boolean).length === 11 && st.userTactics.lineup.some(id => { const p = TAC.playerMap(LEAGUE.club(st, st.userClub))[id]; return p && p.pos === 'GK'; });
+      const T = this.userTac(f);
+      const valid = T.lineup.filter(Boolean).length === 11 && T.lineup.some(id => { const p = TAC.playerMap(LEAGUE.club(st, st.userClub))[id]; return p && p.pos === 'GK'; });
       if (!valid) {
         const ok = await UI.modal({ title: 'Проблема с составом', content: el('p', { text: 'В составе нет вратаря или не хватает игроков. Всё равно начать?' }), buttons: [{ text: 'Исправить', cls: 'ghost', value: false }, { text: 'Играть', cls: 'primary', value: true }] }).result;
         if (!ok) return;
@@ -523,8 +616,8 @@
       await this.playMatchScreen(m);
       await G.MatchScreen.fullTime(m);
       // перенос изменений тактики (без замен) в сохранение
-      st.userTactics.mentality = m.t[human].tac.mentality;
-      st.userTactics.plan = m.t[human].tac.plan;
+      T.mentality = m.t[human].tac.mentality;
+      T.plan = m.t[human].tac.plan;
       this.afterUserMatch(f, m);
     },
 
@@ -595,13 +688,17 @@
         if (upL.length) other.appendChild(el('div.se-move.up', null, [el('small', { text: `⬆ В ${to.acc}` }), el('b', { text: names(upL) + (po ? ` (плей-офф: ${LEAGUE.club(st, po).name})` : '') })]));
         if (dn.length) other.appendChild(el('div.se-move.down', null, [el('small', { text: `⬇ В ${G.DATA.LEAGUES[lid].acc}` }), el('b', { text: names(dn) })]));
       });
+      if (st.cup && st.cup.season === st.season && st.cup.winner) {
+        const cw = LEAGUE.club(st, st.cup.winner);
+        other.insertBefore(el('div.se-lg', null, [UI.crest(cw, 40), el('div', null, [el('small', { text: `Обладатель: ${G.CUP.NAME}` }), el('b', { text: cw.name + (cw.id === st.userClub ? ' — это вы! 🎉' : '') })])]), other.firstChild);
+      }
       root.append(
         el('div.se-trophy', { text: '🏆' }),
         el('h1', { text: 'Чемпион Англии' }),
         el('div.se-champ', null, [UI.crest(champ, 120), el('b', { text: champ.name }), el('small', { text: `${ttop[0].pts} очков · ${champ.coach.name}` })]),
         userTxt ? el('div.se-user', { text: userTxt }) : null,
         sc ? el('div.se-user.small', { text: `Лучший бомбардир: ${sc.p.name} (${sc.c.name}) — ${sc.p.st.goals}` }) : null,
-        ids.length > 1 ? other : null,
+        other.children.length ? other : null,
         el('div.se-btns', null, [
           el('button.btn.ghost', { text: 'Итоговые таблицы', onclick: () => { const b = el('div'); let cur = uc ? uc.league : top; const draw = () => { b.innerHTML = ''; const sg = this.leagueSeg(cur, l => { cur = l; draw(); }); if (sg) b.appendChild(sg); this.tableEl(b, cur); this.playoffEl(b, cur); }; draw(); UI.modal({ title: 'Итоговые таблицы ' + st.seasonName, content: b, wide: true }); } }),
           el('button.btn.primary.big', { text: 'Новый сезон ▶', onclick: () => { LEAGUE.newSeason(st); LEAGUE.save(st); this._vlg = null; this.hub('home'); } })
@@ -1454,6 +1551,8 @@
         el('p', { text: 'У каждого игрока есть скрытый характер — амбиции, преданность, профессионализм и темперамент. Цифр не видно, но их выдают реплики агента в переговорах и мнение тренерского штаба в карточке. Амбициозные просят больше и упорнее торгуются, а если переросли клуб — хотят уйти; преданные идут на уступки; профессионалы лучше прогрессируют и быстрее восстанавливаются; вспыльчивые жалуются в прессе на скамейку. Настроение игрока зависит от игрового времени и результатов и влияет на переговоры.' }),
         el('h4', { text: 'Лиги: Премьер-лига, Чемпионшип, Первая лига' }),
         el('p', { text: 'В игре три дивизиона английского футбола, сезон в них идёт одновременно по общему календарю недель. В Чемпионшипе и Первой лиге по 24 клуба и 46 туров, поэтому в Премьер-лиге (38 туров) бывают недели без матчей — команда отдыхает, игровое время и доверие совета в такие недели не меняются. Из АПЛ и Чемпионшипа вылетают по три клуба; в Чемпионшипе и Первой лиге первые два клуба выходят напрямую, а 3–6 места разыгрывают третью путёвку в плей-офф (полуфиналы и финал на «Уэмбли», ничья — серия пенальти). У каждой лиги своя экономика: чем ниже дивизион, тем скромнее телеправа, билеты и спонсоры (еврокубки — только в АПЛ). Вылетевшие клубы два сезона получают «парашютные» выплаты (£40 и £30 млн), а зарплаты их игроков по пункту о вылете снижаются на 25% — амбициозные игроки этим недовольны. Совет директоров особенно ценит повышение в классе и очень болезненно воспринимает вылет. Покупать и брать в аренду можно игроков из любой лиги: амбициозные звёзды неохотно идут в клуб дивизионом ниже, а молодёжь грандов охотно едет в Чемпионшип за игровой практикой.' }),
+        el('h4', { text: 'Кубок Англии и нагрузка' }),
+        el('p', { text: 'Кубок Англии разыгрывают все 68 клубов на выбывание (ничья — серия пенальти). Самые слабые клубы Первой лиги начинают с 1-го раунда, остальные вступают в 3-м. Полуфиналы и финал — на «Уэмбли». Раунды назначены на свободные недели Премьер-лиги, а у Чемпионшипа и Первой лиги кубковая неделя становится двойной: матч в середине недели, затем матч лиги, и между ними команда восстанавливается лишь наполовину. Тренеры-ИИ ротируют состав в кубке: чем сильнее клуб относительно соперника, тем больше игроков отдыхает (в полуфинале и финале — сильнейший состав), поэтому кубок богат сенсациями. Вы можете выставить отдельный кубковый состав — кнопка «Резерв от ассистента» перед матчем — основа на лигу при этом не меняется. Кубковые матчи дают игровое время запасным, призовые и половину выручки от билетов даже проигравшему. Уставшие игроки (свежесть ниже 70%) травмируются заметно чаще, а совсем вымотанные могут получить мышечную травму без контакта. Если травму получает ваш игрок, матч останавливается и вам предлагают сделать замену.' }),
         el('h4', { text: 'Трансферы' }),
         el('p', { text: 'Летнее окно открыто перед сезоном и в первые недели, зимнее — в середине сезона (точные сроки — на главной и во вкладке «Трансферы»). Покупка идёт в два шага: сначала договоритесь с клубом о сумме (он может принять, назвать свою цену или отказать; ключевые игроки топ-клубов не продаются), затем — с игроком о зарплате и сроке: амбициозные просят больше и не хотят в клуб скромнее, преданные не хотят уходить из своего. Трансферный бюджет выделяет совет директоров, 70% от продаж возвращается в него. Выставляйте игроков на трансфер — клубы будут присылать предложения; недовольные игроки сами просят о трансфере. Клубы-ИИ торгуют и между собой: закрывают слабые позиции и ищут игроков под идею тренера.' }),
         el('p', { text: 'Аренды: отдайте молодого или лишнего игрока в другой клуб (вкладка «Продажа» → «В аренду»), задав гарантии игрового времени, долю зарплаты и опцию выкупа; или арендуйте игрока сами (кнопка «Аренда» в поиске). Практика в аренде ускоряет развитие в межсезонье. Не выполните обещание игрового времени — зимой клуб-владелец отзовёт игрока. В конце сезона арендованные возвращаются домой.' }),

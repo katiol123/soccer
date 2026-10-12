@@ -79,7 +79,12 @@
       st.leagues[lid].fixtures = weeks;
       st.leagues[lid].rounds = R.length;
     }
+    if (G.CUP) G.CUP.build(st);
   }
+  /* Восстановление свежести за неделю */
+  function recovery(p) { return 24 + p.a.sta * 0.9 + ((p.h ? p.h.pro : 10) - 10) * 0.5; }
+  /* Играет ли клуб матч лиги на этой неделе */
+  function hasLeagueMatch(st, c) { const fx = st.leagues[c.league] && st.leagues[c.league].fixtures[st.round]; return !!(fx && fx.some(f => f.h === c.id || f.a === c.id)); }
   function weeks(st) { return st.weeks || st.fixtures.length; }
   /* Ключевые недели сезона (в долях его длины — работает для любой длины календаря) */
   function cal(st) {
@@ -114,7 +119,7 @@
   /* Все матчи недели во всех лигах */
   function weekFixtures(st, week) {
     if (week == null) week = st.round;
-    const out = [];
+    const out = G.CUP ? G.CUP.weekTies(st, week).slice() : []; // кубок — в середине недели, до матчей лиги
     for (const lid of leagueIds(st)) (st.leagues[lid].fixtures[week] || []).forEach(f => out.push(f));
     return out;
   }
@@ -214,11 +219,14 @@
       for (const p of ts.club.players) {
         if (!p.m || !p.m.played) continue;
         if (p.m.played) {
-          p.st.apps++; p.st.goals += p.m.goals; p.st.assists += p.m.assists;
-          p.st.yc += p.m.yc; p.st.rsum += p.m.rating || 6.5;
+          if (fixture.cup) { const cs = p.cst || (p.cst = { apps: 0, goals: 0, assists: 0 }); cs.apps++; cs.goals += p.m.goals; cs.assists += p.m.assists; }
+          else {
+            p.st.apps++; p.st.goals += p.m.goals; p.st.assists += p.m.assists;
+            p.st.yc += p.m.yc; p.st.rsum += p.m.rating || 6.5;
+          }
           p.lp = st.round;
           if (p.m.rc) { p.st.rc++; p.susp = Math.max(p.susp, U.randInt(1, 3)); G.FIN.fines(st, ts.club, p); }
-          if (p.m.yc && !p.m.rc) { p.yc += p.m.yc; if (p.yc >= 5) { p.susp = Math.max(p.susp, 1); p.yc = 0; } }
+          if (p.m.yc && !p.m.rc && !fixture.cup) { p.yc += p.m.yc; if (p.yc >= 5) { p.susp = Math.max(p.susp, 1); p.yc = 0; } }
           if (p.m.inj) p.inj = Math.max(1, U.randInt(1, 4) + (p.h && p.h.pro >= 15 ? -1 : p.h && p.h.pro <= 6 ? 1 : 0));
           p.fit = Math.round(p.m.fit);
           p.lastR = (p.lastR || []).concat([p.m.rating || 6.5]).slice(-5);
@@ -231,16 +239,23 @@
     if (motm && motm.mood != null) motm.mood = Math.min(100, motm.mood + 5);
     fixture.res = { hs: match.score.home, as: match.score.away, goals, stats, motm: motm ? motm.name : null, motmR: motm ? motm.m.rating : null, watched: !!match.watched };
     // плей-офф: ничья — серия пенальти (шанс зависит от силы и хладнокровия)
-    if (fixture.po && fixture.res.hs === fixture.res.as) {
+    if ((fixture.po || fixture.cup) && fixture.res.hs === fixture.res.as) {
       const ch = c => TAC.teamRating(c) + U.avg(c.players.map(p => p.a.com)) * 0.15;
       const H = match.t.home.club, A = match.t.away.club;
       const pH = U.clamp(0.5 + (ch(H) - ch(A)) * 0.05, 0.3, 0.7);
       fixture.res.pen = U.rnd() < pH ? 'h' : 'a';
       const w = fixture.res.pen === 'h' ? H : A;
-      st.news.push({ r: st.round, text: `🎯 ${fixture.po === 'final' ? 'Финал' : 'Полуфинал'} плей-офф: ${H.name} ${fixture.res.hs}:${fixture.res.as} ${A.name}, в серии пенальти сильнее «${w.name}»!` });
+      if (!fixture.cup || H.id === st.userClub || A.id === st.userClub || fixture.neutral) st.news.push({ r: st.round, text: `🎯 ${fixture.cup ? `${G.CUP.NAME}, ${G.CUP.roundName(st, fixture)}` : `${fixture.po === 'final' ? 'Финал' : 'Полуфинал'} плей-офф`}: ${H.name} ${fixture.res.hs}:${fixture.res.as} ${A.name}, в серии пенальти сильнее «${w.name}»!` });
     }
     const hc = club(st, fixture.h);
     G.FIN.matchday(st, fixture, standings(st, hc ? hc.league : st.lg));
+    // двойная неделя: между кубковым и лиговым матчем — половина недельного восстановления
+    if (fixture.cup) for (const id of [fixture.h, fixture.a]) {
+      const c = club(st, id);
+      if (!hasLeagueMatch(st, c)) continue;
+      c.dbl = st.round;
+      c.players.forEach(p => { p.fit = Math.min(100, p.fit + recovery(p) / 2); });
+    }
     // очистка временных данных
     for (const s of ['home', 'away']) match.t[s].club.players.forEach(p => { delete p.m; });
   }
@@ -251,12 +266,13 @@
     const playedClubs = new Set();
     rd.forEach(f => { playedClubs.add(f.h); playedClubs.add(f.a); });
     st.clubs.forEach(c => c.players.forEach(p => {
-      p.fit = Math.min(100, p.fit + 24 + p.a.sta * 0.9 + ((p.h ? p.h.pro : 10) - 10) * 0.5);
+      p.fit = Math.min(100, p.fit + recovery(p) * (c.dbl === st.round ? 0.5 : 1));
       if (p.inj > 0) p.inj--;
       if (p.susp > 0 && playedClubs.has(c.id)) p.susp--;
     }));
     G.FIN.round(st);
     st.round++;
+    if (G.CUP) G.CUP.after(st, st.round - 1);
     playoffStep(st);
     if (G.TR) G.TR.afterRound(st);
     G.CAR.afterRound(st);
@@ -347,7 +363,7 @@
     const sum = seasonSummary(st);
     const table = standings(st);
     st.history = st.history || [];
-    st.history.push({ season: st.seasonName, champion: table[0].id, champions: sum.champions, promoted: sum.promoted.map(x => x.id), relegated: sum.relegated.map(x => x.id), playoff: sum.playoff, playoffs: sum.playoffs, lg: st.lg, user: st.userClub ? table.findIndex(r => r.id === st.userClub) + 1 : null });
+    st.history.push({ season: st.seasonName, cup: st.cup && st.cup.season === st.season ? st.cup.winner : null, champion: table[0].id, champions: sum.champions, promoted: sum.promoted.map(x => x.id), relegated: sum.relegated.map(x => x.id), playoff: sum.playoff, playoffs: sum.playoffs, lg: st.lg, user: st.userClub ? table.findIndex(r => r.id === st.userClub) + 1 : null });
     st.lastSummary = sum;
     if (G.TR) G.TR.endLoans(st);
     G.CAR.retire(st);
@@ -368,7 +384,7 @@
       p.lastR = (p.lastR || []).slice(-2); // в новый сезон переносятся только 2 последние оценки
       p.form = TAC.computeForm(p);
       p.fit = 100; p.inj = 0; p.susp = 0; p.yc = 0;
-      p.st = { apps: 0, goals: 0, assists: 0, yc: 0, rc: 0, rsum: 0 };
+      p.st = { apps: 0, goals: 0, assists: 0, yc: 0, rc: 0, rsum: 0 }; p.cst = null;
     }));
     // новости межсезонья
     const pool = st.userClub ? devs.filter(x => x.c.id === st.userClub) : devs;

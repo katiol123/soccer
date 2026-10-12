@@ -130,6 +130,7 @@
         if (this.skip) { await this.skipToEnd(); break; }
         if (m.halftime) { m.halftime = false; await this.halftime(); continue; }
         if (m.pending) { await this.penalty(); continue; }
+        if (m.injPending) { await this.injuryPause(); continue; }
         await this.turn();
       }
       this.bv.setEnabled(false);
@@ -376,6 +377,21 @@
       const v = await md.result;
       if (v === 'tac') await this.openTactics();
       SFX.whistle(false);
+    }
+
+    /* Травма у игрока пользователя: пауза и предложение замены */
+    async injuryPause() {
+      const m = this.match, { side, p } = m.injPending;
+      m.injPending = null;
+      const ts = m.t[side];
+      if (!ts.onPitch.some(x => x.p === p)) return;
+      if (this.autoHuman) { AI.handleInjury(m, side, p); this.renderAll(); return; }
+      this.renderAll();
+      this.bv.banner('ТРАВМА');
+      const content = el('div', null, [el('p', { text: `${p.name} получил травму и не может продолжать в полную силу (свежесть ${Math.round(p.m.fit)}%).` }), el('p.muted', { text: ts.subsLeft > 0 ? `Замен осталось: ${ts.subsLeft}.` : 'Замен не осталось — игроку придётся доигрывать.' })]);
+      const btns = ts.subsLeft > 0 ? [{ text: 'Доиграет', cls: 'ghost', value: 'stay' }, { text: '🔄 Сделать замену', cls: 'primary', value: 'sub' }] : [{ text: 'Продолжить', cls: 'primary', value: 'stay' }];
+      const v = await UI.modal({ title: '✚ Травма', content, closable: false, buttons: btns }).result;
+      if (v === 'sub') await this.openTactics();
     }
 
     openTactics() {

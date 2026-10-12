@@ -111,6 +111,13 @@
     }
 
     fatF(p) { return 0.72 + 0.28 * (p.m.fit / 100); }
+    /* Травма: у ИИ — вынужденная замена сразу, у живого игрока — пауза с предложением замены */
+    onInjury(side, p) {
+      if (this.t[side].ctrl === 'human' && this.interactive) { this.injPending = { side, p }; return; }
+      if (G.AI) G.AI.handleInjury(this, side, p);
+    }
+    /* Усталость повышает риск травмы: ниже 70% свежести — до ×3 при 30% */
+    fatInj(p) { return p.m.fit >= 70 ? 1 : 1 + (70 - p.m.fit) / 20; }
 
     /* ---------- особенности игроков ---------- */
     cond(side, w) {
@@ -557,10 +564,10 @@
       }
       this.dissent(side, arp === 4 ? 1.6 : 1, fx);
       // травма
-      if (victim && U.rnd() < 0.05 * this.pm(victim, 'injury')) {
+      if (victim && U.rnd() < 0.05 * this.pm(victim, 'injury') * this.fatInj(victim)) {
         victim.m.inj = true; victim.m.fit = Math.min(victim.m.fit, 30);
         this.say('injury', TRAITS.has(victim, 'glass') ? `${this.traitNote(victim, 'glass')} снова травмирован... Хрупкий, как стекло.` : `${this.pname(victim)} получает травму и хромает...`, aSide);
-        if (G.AI && this.t[aSide].ctrl === 'ai') G.AI.handleInjury(this, aSide, victim);
+        this.onInjury(aSide, victim);
       }
       if (arp === 4 && U.rnd() < 0.55) {
         fx.push({ k: 'event', text: 'ПЕНАЛЬТИ!' });
@@ -769,6 +776,12 @@
           if (!x.p) continue;
           const role = x.slot.role === 'GK' ? 0.25 : 1;
           x.p.m.fit = Math.max(5, x.p.m.fit - drain * role * this.pm(x.p, 'drain') * (1.45 - x.p.a.sta / 20 * 0.9) * (0.9 + 0.2 * U.rnd()) * (24 / this.H));
+          // мышечная травма на усталости (без контакта)
+          if (role === 1 && !x.p.m.inj && x.p.m.fit < 45 && U.rnd() < 0.0006 * (45 - x.p.m.fit) / 10 * this.pm(x.p, 'injury') * (24 / this.H)) {
+            x.p.m.inj = true; x.p.m.fit = Math.min(x.p.m.fit, 30);
+            this.say('injury', `${this.pname(x.p)} хватается за заднюю поверхность бедра — сказывается усталость...`, s);
+            this.onInjury(s, x.p);
+          }
         }
         ts.shield = Math.max(0, ts.shield - 3.5);
         ts.pressure = Math.max(0, ts.pressure - 2);
@@ -873,6 +886,7 @@
       let guard = 0;
       while (!this.over && guard++ < 2000) {
         if (this.pending) { this.resolvePenalty(); continue; }
+        if (this.injPending) { const ip = this.injPending; this.injPending = null; if (G.AI) G.AI.handleInjury(this, ip.side, ip.p); }
         const mv = G.AI.chooseMove(this, this.cur);
         if (!mv) { this.board.shuffle(); continue; }
         this.playMove(mv.a, mv.b);

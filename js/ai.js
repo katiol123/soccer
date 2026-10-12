@@ -18,17 +18,20 @@
   }
 
   /* Подготовка к матчу: схема, состав и план с учётом предпочтений, состава и соперника */
-  function prepare(club, opp, isHome) {
+  function prepare(club, opp, isHome, opts) {
     const c = club.coach;
     const notes = [];
     const myR = TAC.teamRating(club), oppR = TAC.teamRating(opp);
     const diff = myR - oppR + (isHome ? 0.35 : -0.35);
     const ctx = { strongOpp: oppR >= 16, weakOpp: oppR <= 14.5, away: !isHome };
+    // кубок: ротация основы (сильнее соперник и решающие раунды — меньше ротации)
+    const cupF = opts && opts.cup;
+    const exclude = cupRest(club, opp, cupF);
     const HAS = G.TRAITS.has;
     // схема
     let best = null;
     for (const f of Object.keys(TAC.FORMATIONS)) {
-      const xi = TAC.bestXI(club, f, { ctx });
+      const xi = TAC.bestXI(club, f, { ctx, exclude });
       let score = TAC.lineupRating(club, f, xi.lineup);
       const pi = c.formations.indexOf(f);
       if (pi >= 0) score += (pi === 0 ? 0.9 : 0.6) * (1.25 - c.adapt);
@@ -89,6 +92,8 @@
     };
     // особенности в составе
     const map = TAC.playerMap(club);
+    if (exclude && exclude.size) { const r = [...exclude].map(id => map[id]).filter(Boolean).sort((a, b) => TAC.overall(b) - TAC.overall(a)); notes.unshift(`Кубок: ротация — отдыхают ${r.slice(0, 3).map(p => p.name).join(', ')}${r.length > 3 ? ` и ещё ${r.length - 3}` : ''}.`); }
+    else if (cupF && cupF.neutral) notes.unshift('Кубок: решающий матч — сильнейший состав.');
     const xiP = best.xi.lineup.map(id => map[id]).filter(Boolean);
     const bg = xiP.filter(p => ctx.strongOpp ? HAS(p, 'bigGame') : ctx.weakOpp ? HAS(p, 'flatTrack') : false);
     if (bg.length) notes.push(`${ctx.strongOpp ? 'Против фаворита' : 'Против слабого'} ставка на ${bg.map(p => p.name).join(', ')} (${ctx.strongOpp ? '⭐ любит большие матчи' : '🐯 хорош против слабых'}).`);
@@ -106,6 +111,22 @@
     if (rested.length) notes.push(`Ротация: отдых для ${rested.slice(0, 2).map(p => p.name).join(', ')}.`);
     tactics.notes = notes;
     return tactics;
+  }
+
+  /* Кого из основы оставить отдыхать в кубке: сильнейших и самых уставших, вратаря — только при большой ротации */
+  function cupRest(club, opp, f, force) {
+    const k = force != null ? force : f && G.CUP ? G.CUP.rotation(club, opp, f) : 0;
+    if (!k) return null;
+    const avail = club.players.filter(p => TAC.available(p));
+    if (avail.length - k < 14) return null;
+    const ranked = avail.filter(p => p.pos !== 'GK' || k >= 5).sort((a, b) => (TAC.overall(b) + (100 - b.fit) / 12) - (TAC.overall(a) + (100 - a.fit) / 12));
+    const out = new Set();
+    for (const p of ranked) {
+      if (out.size >= k) break;
+      if (p.pos === 'GK' && avail.filter(x => x.pos === 'GK' && !out.has(x.id)).length < 2) continue;
+      out.add(p.id);
+    }
+    return out;
   }
 
   function planReason(plan, prof, oprof, diff) {
@@ -438,5 +459,5 @@
     return r < 0.1 ? 1 : (U.rnd() < 0.5 ? 0 : 2);
   }
 
-  G.AI = { liveProfile, diagnose, prepare, matchStart, think, halftime, onGoal, onRedCard, handleInjury, chooseMove, gemWeights, penaltyKick, penaltyDive, xiProfile };
+  G.AI = { cupRest, liveProfile, diagnose, prepare, matchStart, think, halftime, onGoal, onRedCard, handleInjury, chooseMove, gemWeights, penaltyKick, penaltyDive, xiProfile };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,7 +1,7 @@
 // Симуляция сезонов всех лиг: node tools/season.js [сезонов=1]
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const ctx = { console, Math, Date, JSON, setTimeout }; ctx.globalThis = ctx; vm.createContext(ctx);
-for (const f of ['util', 'traits', 'data', 'tactics', 'finance', 'transfers', 'career', 'board', 'engine', 'ai', 'league'])
+for (const f of ['util', 'traits', 'data', 'tactics', 'finance', 'transfers', 'career', 'board', 'engine', 'ai', 'league', 'cup'])
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../js', f + '.js'), 'utf8'), ctx, { filename: f });
 const { LEAGUE, AI, ENGINE, TAC, FIN, DATA } = ctx;
 const N = +process.argv[2] || 1;
@@ -11,7 +11,8 @@ for (let s = 0; s < N; s++) {
   while (!LEAGUE.seasonOver(st)) {
     for (const f of LEAGUE.weekFixtures(st)) {
       const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a);
-      const m = new ENGINE.Match({ home: { club: h, tactics: AI.prepare(h, a, true) }, away: { club: a, tactics: AI.prepare(a, h, false) }, turns: st.settings.turns });
+      const o = f.cup ? { cup: f } : null;
+      const m = new ENGINE.Match({ home: { club: h, tactics: AI.prepare(h, a, true, o) }, away: { club: a, tactics: AI.prepare(a, h, false, o) }, turns: st.settings.turns });
       m.simulate(); LEAGUE.record(st, f, m);
     }
     LEAGUE.advance(st);
@@ -21,6 +22,8 @@ for (let s = 0; s < N; s++) {
     console.log(`-- ${DATA.LEAGUES[lid].name}`);
     LEAGUE.standings(st, lid).forEach((r, i) => { const c = LEAGUE.club(st, r.id); console.log(String(i + 1).padStart(2), c.name.padEnd(20), c.str.toFixed(1), TAC.teamRating(c).toFixed(1), r.p, r.w, r.d, r.l, (r.gf + ':' + r.ga).padEnd(7), String(r.pts).padStart(3), 'бал', c.fin.balance.toFixed(0).padStart(5), 'зп', String(FIN.wageBill(c)).padStart(5), '/', c.fin.wageBudget, 'игр', c.players.length); });
   }
+  if (st.cup) { console.log('Кубок Англии:', st.cup.rounds.map(r => `${r.name}@${r.week + 1}(${r.ties.length})`).join(' '), '| победитель:', st.cup.winner && LEAGUE.club(st, st.cup.winner).name, '| финал:', st.cup.rounds[st.cup.rounds.length - 1].ties.map(f => `${LEAGUE.club(st, f.h).short} ${f.res.hs}:${f.res.as}${f.res.pen ? ' пен.' : ''} ${LEAGUE.club(st, f.a).short}`).join('')); }
+  const injN = st.clubs.reduce((n, c) => n + c.players.filter(p => p.inj > 0).length, 0); console.log('травмированы сейчас:', injN, '| сенсаций:', st.news.filter(n => /Сенсация/.test(n.text)).length);
   const sum = LEAGUE.seasonSummary(st);
   console.log('Повышение:', sum.promoted.map(x => LEAGUE.club(st, x.id).name).join(', '), '| плей-офф:', sum.playoff && LEAGUE.club(st, sum.playoff).name, '| вылет:', sum.relegated.map(x => LEAGUE.club(st, x.id).name).join(', '));
   const po = ['eng2', 'eng3'].filter(l => st.leagues[l]).flatMap(l => st.leagues[l].fixtures.slice(-2).flat()).map(f => `${LEAGUE.club(st, f.h).short} ${f.res.hs}:${f.res.as}${f.res.pen ? ' пен.' + f.res.pen : ''} ${LEAGUE.club(st, f.a).short}`);
