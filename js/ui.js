@@ -24,6 +24,18 @@
       };
       try { SFX.on = localStorage.getItem('m3-sound') !== 'off'; } catch (e) { /* */ }
       document.addEventListener('pointerdown', () => SFX.ensure(), { once: true });
+      // клик по названию клуба — его состав (вкладка «Состав и тактика» / «Клубы»)
+      document.addEventListener('click', e => {
+        const t = e.target.closest && e.target.closest('[data-club]');
+        if (!t || !this.st || LEAGUE.seasonOver(this.st) || !document.querySelector('.screen.hub')) return;
+        const c = LEAGUE.club(this.st, t.dataset.club);
+        if (!c) return;
+        e.preventDefault(); e.stopPropagation();
+        document.querySelectorAll('#modal-root .modal-x').forEach(b => b.click());
+        this.squadClub = c.id; this._pickLg = c.league;
+        this.hub('squad');
+        window.scrollTo(0, 0);
+      }, true);
       this.menu();
     },
 
@@ -217,7 +229,7 @@
       tabs.forEach(([k, n]) => nav.appendChild(el('button' + (this.tab === k ? '.on' : ''), { text: n, onclick: () => this.hub(k) })));
       const top = el('header.topbar', null, [
         el('div.tb-brand', { onclick: () => this.gameMenu() }, [el('span.tb-logo', { text: 'К' }), el('span', { text: 'КОМБИНАЦИЯ' })]),
-        el('div.tb-club', null, uc ? [UI.crest(uc, 30), el('div', null, [el('b', { text: uc.name }), el('small', { text: `${LEAGUE.leagueInfo(st).short} · ${st.seasonName} · ${LEAGUE.weekLabel(st)}` })])] : [el('span.tb-eye', { text: '👁' }), el('div', null, [el('b', { text: 'Режим зрителя' }), el('small', { text: `Сезон ${st.seasonName} · неделя ${st.round + 1}/${LEAGUE.weeks(st)}` })])]),
+        el('div.tb-club', null, uc ? [UI.crest(uc, 30), el('div', null, [el('b', null, [UI.cname(uc)]), el('small', { text: `${LEAGUE.leagueInfo(st).short} · ${st.seasonName} · ${LEAGUE.weekLabel(st)}` })])] : [el('span.tb-eye', { text: '👁' }), el('div', null, [el('b', { text: 'Режим зрителя' }), el('small', { text: `Сезон ${st.seasonName} · неделя ${st.round + 1}/${LEAGUE.weeks(st)}` })])]),
         nav,
         el('button.icon-btn', { text: '☰', title: 'Меню', onclick: () => this.gameMenu() })
       ]);
@@ -332,9 +344,9 @@
       card.append(
         el('div.nm-label', { text: f.cup ? `🏆 ${G.CUP.NAME} · ${G.CUP.roundName(st, f)} · ${f.neutral ? 'стадион «Уэмбли»' : home.stadium}` : `${LEAGUE.leagueInfo(st).name} · ${LEAGUE.weekLabel(st)} · ${f.po === 'final' ? 'стадион «Уэмбли»' : home.stadium}` }),
         el('div.nm-teams', null, [
-          el('div.nm-t', null, [UI.crest(home, 72), el('b', { text: home.name }), el('small', { text: `${pos(home.id)} место · ${TAC.teamRating(home).toFixed(1)}` })]),
+          el('div.nm-t', null, [UI.crest(home, 72), el('b', null, [UI.cname(home)]), el('small', { text: `${pos(home.id)} место · ${TAC.teamRating(home).toFixed(1)}` })]),
           el('div.nm-vs', { text: 'VS' }),
-          el('div.nm-t', null, [UI.crest(away, 72), el('b', { text: away.name }), el('small', { text: `${pos(away.id)} место · ${TAC.teamRating(away).toFixed(1)}` })])
+          el('div.nm-t', null, [UI.crest(away, 72), el('b', null, [UI.cname(away)]), el('small', { text: `${pos(away.id)} место · ${TAC.teamRating(away).toFixed(1)}` })])
         ]),
         el('div.nm-scout', null, [
           el('div.nm-scout-h', null, [el('span', { text: '🔎 Скаутский отчёт' }), el('b', { text: `${opp.coach.name}` })]),
@@ -368,9 +380,9 @@
         const mine = st.userClub && (f.h === st.userClub || f.a === st.userClub);
         const row = el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''));
         row.append(
-          el('div.fx-t.h', null, [el('span', null, [h.name, el('small.fx-pos', { text: ` (${place(h.id)})` })]), UI.crest(h, 26)]),
+          el('div.fx-t.h', null, [el('span', null, [UI.cname(h), el('small.fx-pos', { text: ` (${place(h.id)})` })]), UI.crest(h, 26)]),
           el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}` : '– : –' }),
-          el('div.fx-t.a', null, [UI.crest(a, 26), el('span', null, [a.name, el('small.fx-pos', { text: ` (${place(a.id)})` })])])
+          el('div.fx-t.a', null, [UI.crest(a, 26), el('span', null, [UI.cname(a), el('small.fx-pos', { text: ` (${place(a.id)})` })])])
         );
         const acts = el('div.fx-act');
         if (!f.res) {
@@ -416,9 +428,9 @@
           else acts.append(el('button.btn.small', { text: '👁', title: 'Смотреть', onclick: () => this.watchMatch(f) }), el('button.btn.small.ghost', { text: '⚡', title: 'Быстрая симуляция', onclick: () => { this.simFixture(f); LEAGUE.save(st); this.hub(); } }));
         } else acts.appendChild(el('button.btn.small.ghost', { text: 'Отчёт', onclick: () => this.report(f) }));
         box.appendChild(el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''), null, [
-          el('div.fx-t.h', null, [el('span', null, [h.name, el('small.fx-pos', { text: ` (${lg(h)})` })]), UI.crest(h, 24)]),
+          el('div.fx-t.h', null, [el('span', null, [UI.cname(h), el('small.fx-pos', { text: ` (${lg(h)})` })]), UI.crest(h, 24)]),
           el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –' }),
-          el('div.fx-t.a', null, [UI.crest(a, 24), el('span', null, [a.name, el('small.fx-pos', { text: ` (${lg(a)})` })])]), acts]));
+          el('div.fx-t.a', null, [UI.crest(a, 24), el('span', null, [UI.cname(a), el('small.fx-pos', { text: ` (${lg(a)})` })])]), acts]));
       });
       const left = ties.filter(f => !f.res && !(u && (f.h === u || f.a === u)));
       const foot = el('div.cup-foot');
@@ -451,9 +463,9 @@
         ties.forEach(f => {
           const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a), w = LEAGUE.winner(f), mine = u && (f.h === u || f.a === u);
           sec.appendChild(el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''), { onclick: () => f.res && this.report(f) }, [
-            el('div.fx-t.h' + (w === h.id ? '.win' : ''), null, [el('span', null, [h.name, el('small.fx-pos', { text: ` (${LEAGUE.leagueInfo(st, h.league).short})` })]), UI.crest(h, 22)]),
+            el('div.fx-t.h' + (w === h.id ? '.win' : ''), null, [el('span', null, [UI.cname(h), el('small.fx-pos', { text: ` (${LEAGUE.leagueInfo(st, h.league).short})` })]), UI.crest(h, 22)]),
             el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –' }),
-            el('div.fx-t.a' + (w === a.id ? '.win' : ''), null, [UI.crest(a, 22), el('span', null, [a.name, el('small.fx-pos', { text: ` (${LEAGUE.leagueInfo(st, a.league).short})` })])])]));
+            el('div.fx-t.a' + (w === a.id ? '.win' : ''), null, [UI.crest(a, 22), el('span', null, [UI.cname(a), el('small.fx-pos', { text: ` (${LEAGUE.leagueInfo(st, a.league).short})` })])])]));
         });
         if (R.ties.length || R === cup.rounds[cup.rounds.length - 1]) card.appendChild(sec);
       });
@@ -624,7 +636,7 @@
     report(f) {
       const st = this.st, h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a), r = f.res;
       const content = el('div.report');
-      content.appendChild(el('div.ft-head', null, [el('div.ft-team', null, [UI.crest(h, 54), el('b', { text: h.name })]), el('div.ft-score', { text: `${r.hs} : ${r.as}` }), el('div.ft-team', null, [UI.crest(a, 54), el('b', { text: a.name })])]));
+      content.appendChild(el('div.ft-head', null, [el('div.ft-team', null, [UI.crest(h, 54), el('b', null, [UI.cname(h)])]), el('div.ft-score', { text: `${r.hs} : ${r.as}` }), el('div.ft-team', null, [UI.crest(a, 54), el('b', null, [UI.cname(a)])])]));
       const gl = el('div.ft-goals');
       r.goals.forEach(g => gl.appendChild(el('div.ft-g.' + g.side, { text: `⚽ ${g.min} ${g.scorer}${g.kind === 'pen' ? ' (пен.)' : ''}${g.assist ? ' (' + g.assist + ')' : ''}` })));
       content.appendChild(gl);
@@ -720,7 +732,7 @@
       } else rows = rows.slice(0, 8);
       rows.forEach(({ r, i }) => {
         const c = LEAGUE.club(st, r.id);
-        box.appendChild(el('div.mini-row' + (r.id === st.userClub ? '.me' : ''), null, [el('span.pos', { text: i + 1 }), UI.crest(c, 18), el('span.nm', { text: c.name }), el('span.muted', { text: r.p }), el('b', { text: r.pts })]));
+        box.appendChild(el('div.mini-row' + (r.id === st.userClub ? '.me' : ''), null, [el('span.pos', { text: i + 1 }), UI.crest(c, 18), el('span.nm', null, [UI.cname(c)]), el('span.muted', { text: r.p }), el('b', { text: r.pts })]));
       });
       box.appendChild(el('button.btn.ghost.small', { text: 'Вся таблица', onclick: () => { this._vlg = lid; this.hub('table'); } }));
       return box;
@@ -754,9 +766,9 @@
       const row = (f, tag) => {
         const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a), w = LEAGUE.winner(f);
         return el('div.fx-row.po' + (f.res ? '.done' : ''), { onclick: () => f.res && this.report(f) }, [el('small.po-tag', { text: tag }),
-          el('div.fx-t.h' + (w === h.id ? '.win' : ''), null, [el('span', { text: h.name }), UI.crest(h, 22)]),
+          el('div.fx-t.h' + (w === h.id ? '.win' : ''), null, [UI.cname(h), UI.crest(h, 22)]),
           el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' (пен.)' : ''}` : '– : –' }),
-          el('div.fx-t.a' + (w === a.id ? '.win' : ''), null, [UI.crest(a, 22), el('span', { text: a.name })])]);
+          el('div.fx-t.a' + (w === a.id ? '.win' : ''), null, [UI.crest(a, 22), UI.cname(a)])]);
       };
       if (!semis.length) {
         const t = LEAGUE.standings(st, lid), s = i => LEAGUE.club(st, t[i - 1].id).short;
@@ -782,7 +794,7 @@
         const form = el('td.form');
         r.form.forEach(x => form.appendChild(el('span.form-b.' + x, { text: { W: 'В', D: 'Н', L: 'П' }[x] })));
         tb.appendChild(el('tr' + (zone ? '.' + zone : '') + (r.id === st.userClub ? '.me' : ''), null, [
-          el('td.pos', { text: i + 1 }), el('td.club', null, [UI.crest(c, 22), el('span', { text: c.name })]),
+          el('td.pos', { text: i + 1 }), el('td.club', null, [UI.crest(c, 22), UI.cname(c)]),
           el('td', { text: r.p }), el('td', { text: r.w }), el('td', { text: r.d }), el('td', { text: r.l }), el('td', { text: `${r.gf}:${r.ga}` }), el('td', { text: (r.gd > 0 ? '+' : '') + r.gd }), el('td.pts', r.ded ? { text: r.pts + '*', title: `−${r.ded} очков: внешнее управление` } : { text: r.pts }), form
         ]));
       });
@@ -812,9 +824,9 @@
           const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a);
           const mine = st.userClub && (f.h === st.userClub || f.a === st.userClub);
           const row = el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''), { onclick: () => f.res && this.report(f) }, [
-            el('div.fx-t.h', null, [el('span', null, [h.name, el('small.fx-pos', { text: ` (${place(h.id)})` })]), UI.crest(h, 24)]),
+            el('div.fx-t.h', null, [el('span', null, [UI.cname(h), el('small.fx-pos', { text: ` (${place(h.id)})` })]), UI.crest(h, 24)]),
             el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –' }),
-            el('div.fx-t.a', null, [UI.crest(a, 24), el('span', null, [a.name, el('small.fx-pos', { text: ` (${place(a.id)})` })])])
+            el('div.fx-t.a', null, [UI.crest(a, 24), el('span', null, [UI.cname(a), el('small.fx-pos', { text: ` (${place(a.id)})` })])])
           ]);
           list.appendChild(row);
         });
@@ -924,7 +936,7 @@
           el('td', null, [el('button.star-btn' + (starOn ? '.on' : ''), { text: starOn ? '★' : '☆', title: 'Избранное', onclick: (e) => { e.stopPropagation(); m.short = starOn ? m.short.filter(id => id !== p.id) : m.short.concat([p.id]); e.target.classList.toggle('on'); e.target.textContent = m.short.includes(p.id) ? '★' : '☆'; LEAGUE.save(st); } })]),
           el('td', null, [el('span.bp-pos', { text: UI.posShort(p.pos) })]),
           el('td.pname', null, [p.name + ' ', UI.traitIcons(p)]),
-          el('td', null, [UI.crest(c, 20), ' ' + c.short]),
+          el('td', null, [UI.crest(c, 20), ' ', UI.cname(c, c.short)]),
           el('td', { text: p.age }),
           el('td', null, [el('b', { text: ovr.toFixed(1), style: { color: U.attrColor(ovr) } })]),
           el('td', null, [UI.formBadge(p)]),
@@ -998,12 +1010,12 @@
       if (!m.history.length) { card.appendChild(el('div.muted', { text: 'Сделок пока не было.' })); return; }
       m.history.slice().reverse().forEach(h => {
         const a = h.from ? LEAGUE.club(st, h.from) : null, b = h.to ? LEAGUE.club(st, h.to) : null;
-        if (!a && b) { card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, ['свободный агент → ', UI.crest(b, 18), ` ${b.short}`]), el('b.loan-tag', { text: 'бесплатно' })])); return; }
+        if (!a && b) { card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, ['свободный агент → ', UI.crest(b, 18), ' ', UI.cname(b, b.short)]), el('b.loan-tag', { text: 'бесплатно' })])); return; }
         if (!a) return;
-        if (!b) { card.appendChild(el('div.hist-row', null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ` ${a.short} → свободный агент`]), el('b', { text: '—' })])); return; }
+        if (!b) { card.appendChild(el('div.hist-row', null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ' ', UI.cname(a, a.short), ' → свободный агент']), el('b', { text: '—' })])); return; }
         const mine = h.to === st.userClub ? 'in' : h.from === st.userClub ? 'out' : '';
-        if (h.loan) { card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ` ${a.short} → `, UI.crest(b, 18), ` ${b.short}`]), el('b.loan-tag', { text: 'аренда' + (h.fee ? ' · ' + G.FIN.fmtM(h.fee) : '') })])); return; }
-        card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ` ${a.short} → `, UI.crest(b, 18), ` ${b.short}`]), el('b', { text: G.FIN.fmtM(h.fee) })]));
+        if (h.loan) { card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ' ', UI.cname(a, a.short), ' → ', UI.crest(b, 18), ' ', UI.cname(b, b.short)]), el('b.loan-tag', { text: 'аренда' + (h.fee ? ' · ' + G.FIN.fmtM(h.fee) : '') })])); return; }
+        card.appendChild(el('div.hist-row.' + mine, null, [el('small', { text: `${h.season}, нед. ${h.round}` }), el('b', { text: h.name }), el('span', null, [UI.crest(a, 18), ' ', UI.cname(a, a.short), ' → ', UI.crest(b, 18), ' ', UI.cname(b, b.short)]), el('b', { text: G.FIN.fmtM(h.fee) })]));
       });
     },
 

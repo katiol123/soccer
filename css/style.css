@@ -809,3 +809,4 @@ table.league tr.po td.pos { box-shadow: inset 3px 0 0 #ffd23f; }
 .cup-tools { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .cup-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 1500px) { .hub-nav button { padding: 8px 10px; } .hub-nav button.on::after { left: 10px; right: 10px; } }
+.club-link { cursor: pointer; transition: color .15s; } .club-link:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }

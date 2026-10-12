@@ -21,6 +21,9 @@
   };
 
   /* Модальное окно. buttons: [{text, cls, value, onClick}] — возвращает {el, close, result: Promise} */
+  /* Название клуба-ссылка: клик открывает состав клуба */
+  UI.cname = (c, txt) => el('span.club-link', { 'data-club': c.id, title: 'Состав «' + c.name + '»', text: txt || c.name });
+
   UI.modal = (opts) => {
     const root = document.getElementById('modal-root');
     const back = el('div.modal-back');
