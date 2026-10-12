@@ -33,13 +33,20 @@
     wind: { n: 'Сильный ветер', i: '💨', attr: { sho: -1, pas: -0.5 }, drain: 1, plan: { wings: 0.94, direct: 0.97, counter: 1.03, possession: 1.02 }, d: 'Навесы и дальние удары летят мимо, лучше короткий пас' },
     snow: { n: 'Снег', i: '❄️', attr: { dri: -1, pac: -1, pas: -0.5 }, drain: 1.1, plan: { possession: 0.95, direct: 1.03, counter: 0.97 }, d: 'Мяч вязнет, скорость и обводка падают' }
   };
+  /* Давление трибун на гостей (0..~1.6): нарастает к аншлагу, больше на крупных аренах; нейтральное поле — 0 */
+  function crowdOf(env) {
+    if (env && env.neutral) return 0;
+    const cf = !env ? 0.85 : (env.fill == null ? 0.9 : env.fill);
+    return 1.3 * Math.pow(cf, 2.5) * U.clamp(0.6 + ((env && env.cap) || 30) / 100, 0.6, 1.25);
+  }
+  function crowdLabel(c) { return c >= 1.05 ? 'ревущий аншлаг' : c >= 0.75 ? 'сильное' : c >= 0.45 ? 'заметное' : c > 0.1 ? 'слабое' : 'нет'; }
   /* Домашнее преимущество: чем полнее и больше арена, тем сильнее поддержка (нейтральное поле — 0).
      Делится поровну: хозяева атакуют сильнее, гости — слабее, общее число голов почти не меняется */
   function homeK(env) {
-    if (!env) return 1.2;
+    if (!env) return 1.1;
     if (env.neutral) return 1;
     const loud = U.clamp(0.6 + (env.cap || 30) / 100, 0.6, 1.25);
-    return 1 + 0.05 + 0.2 * (env.fill == null ? 0.9 : env.fill) * loud;
+    return 1 + 0.01 + 0.12 * (env.fill == null ? 0.9 : env.fill) * loud;
   }
   const PRESS_M = [0.82, 1, 1.2], PRESS_DRAIN = [0.8, 1, 1.3];
 
@@ -99,6 +106,9 @@
       this.env = cfg.env || null;
       this.wx = WEATHER[(this.env && this.env.weather) || 'clear'] || WEATHER.clear;
       this.homeK = homeK(this.env);
+      // давление трибун (0 — пусто или нейтральное поле, ~1 — ревущий аншлаг на большой арене)
+      // нарастает к аншлагу: полупустые трибуны почти не давят, ревущий полный стадион — сильно
+      this.crowd = crowdOf(this.env);
       this.t = {
         home: new TeamState('home', cfg.home.club, cfg.home.tactics, cfg.home.ctrl),
         away: new TeamState('away', cfg.away.club, cfg.away.tactics, cfg.away.ctrl)
@@ -186,6 +196,8 @@
       if (p.m && p.m.formB) v += p.m.formB;
       if (this.wx.attr[k]) v += this.wx.attr[k];
       if (p.m && (k === 'tac' || k === 'pos')) v += this.effort(p);
+      // трибуны давят на гостей: хладнокровие падает; хозяев поддерживают
+      if (p.m && k === 'com') v += p.m.side === 'away' ? -this.crowd * 1.8 : this.crowd * 0.5;
       return U.clamp(v, 1, 22);
     }
     /* Командный множитель (произведение по игрокам на поле) */
@@ -285,7 +297,7 @@
       const ctx = { side, critical: false, shotTaken: false, stopped: false };
       // «решающий момент» — критический ход зависит от хладнокровия
       const comV = this.val(side, 'com', side === this.poss ? PHASE(this.rp(side)) : PHASE(this.rp(side)));
-      if (U.rnd() < comV / 170 + this.tadd(side, 'crit')) { ctx.critical = true; }
+      if (U.rnd() < comV / 170 + this.tadd(side, 'crit') + (side === 'home' ? 0.015 : -0.015) * this.crowd) { ctx.critical = true; }
       this.t[this.poss].st.poss++;
       const stepFx = [];
       for (const step of res.steps) {
@@ -482,7 +494,7 @@
         const tacV = this.val(side, 'tac', ph), comV = this.val(side, 'com', ph);
         let fp = CFG.foulBase * (c[4] / 3) * (1 + (11 - tacV) / 14) * (1 + (11 - comV) / 20) * [0.8, 1, 1.25][me.tac.pressing];
         if (step.groups.some(g => g.t === 4 && g.size >= 4)) fp *= 1.8;
-        fp *= this.tmul(side, 'foul') * this.tmul(aSide, 'oppFoul') * this.hotK(side);
+        fp *= this.tmul(side, 'foul') * this.tmul(aSide, 'oppFoul') * this.hotK(side) * (side === 'away' ? 1 + 0.2 * this.crowd : 1);
         if (U.rnd() < U.clamp(fp, 0, 0.4)) {
           this.foul(side, ph, fx, ctx);
           return;
@@ -581,7 +593,7 @@
       fx.push({ k: 'event', text: 'ФОЛ!' });
       const arp = this.rp(aSide);
       let card = null;
-      const cardP = 0.3 + (10 - this.pa(fouler, 'com')) * 0.015 + (arp >= 3 ? 0.1 : 0) + (this.counter && this.counter.side === aSide ? 0.15 : 0) + this.padd(fouler, 'cardP') + ((fouler.m.hot || 1) - 1) * 0.15;
+      const cardP = 0.3 + (10 - this.pa(fouler, 'com')) * 0.015 + (arp >= 3 ? 0.1 : 0) + (this.counter && this.counter.side === aSide ? 0.15 : 0) + this.padd(fouler, 'cardP') + ((fouler.m.hot || 1) - 1) * 0.15 + (fouler.m.side === 'away' ? 0.06 : -0.03) * this.crowd; // судья под давлением трибун
       if (U.rnd() < 0.012 * this.pm(fouler, 'redP') * (fouler.m.hot || 1)) card = 'red';
       else if (U.rnd() < cardP) card = fouler.m.yc >= 1 ? 'red2' : 'yellow';
       if (this.log || card) {
@@ -606,7 +618,7 @@
         this.say('injury', TRAITS.has(victim, 'glass') ? `${this.traitNote(victim, 'glass')} снова травмирован... Хрупкий, как стекло.` : `${this.pname(victim)} получает травму и хромает...`, aSide);
         this.onInjury(aSide, victim);
       }
-      if (arp === 4 && U.rnd() < 0.55) {
+      if (arp === 4 && U.rnd() < 0.55 + (aSide === 'home' ? 0.1 : -0.05) * this.crowd) {
         fx.push({ k: 'event', text: 'ПЕНАЛЬТИ!' });
         this.say('penalty', `ПЕНАЛЬТИ! Судья без колебаний показывает на точку!`, aSide);
         this.dissent(side, 2, fx);
@@ -939,5 +951,5 @@
     }[c] || 'КОМБО!';
   }
 
-  G.ENGINE = { Match, CFG, PHASE, R, ZONE_TXT, WEATHER, homeK };
+  G.ENGINE = { Match, CFG, PHASE, R, ZONE_TXT, WEATHER, homeK, crowdOf, crowdLabel };
 })(typeof window !== 'undefined' ? window : globalThis);

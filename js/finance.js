@@ -344,7 +344,7 @@
     const cap = env.cap, base = ticket(H) * (f.cup ? 0.85 : 1), share = f.cup ? 0.55 : 1;
     return PRICES.map(m => {
       const fill = fillAt(env, m), e = Object.assign({}, env, { fill });
-      return { m, price: Math.round(base * m), fill, rev: Math.round(cap * fill * base * m * share / 10) / 100, homeK: G.ENGINE ? G.ENGINE.homeK(e) : 1 };
+      return { m, price: Math.round(base * m), fill, rev: Math.round(cap * fill * base * m * share / 10) / 100, homeK: G.ENGINE ? G.ENGINE.homeK(e) : 1, crowd: G.ENGINE ? G.ENGINE.crowdOf(e) : 0 };
     });
   }
   /* Выбор цены ИИ: деньги против поддержки. Долги, запрет и скупой владелец толкают цену вверх, важный матч — вниз */
@@ -355,7 +355,8 @@
     const r1 = opts.find(o => o.m === 1).rev || 0.01;
     let best = null;
     for (const o of opts) {
-      const u = (o.rev / r1) * wMoney * 3 + (Math.sqrt(o.homeK) - 1) * 100 * wSport * 0.5 + (U.rnd() - 0.5) * 0.3;
+      // поддержка: давление трибун на гостей (≈ +0.15 очка за матч между 75% и аншлагом) + небольшой плюс к атаке
+      const u = (o.rev / r1) * wMoney * 3 + (o.crowd * 3.5 + (Math.sqrt(o.homeK) - 1) * 20) * wSport + (U.rnd() - 0.5) * 0.3;
       if (!best || u > best.u) best = { m: o.m, u };
     }
     return best.m;
