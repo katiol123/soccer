@@ -381,7 +381,7 @@
         g *= mult * aM * shieldF * directF;
         gain += g; me.st.passes += c[1];
         // точная передача уводит мяч от прессинга (Пас против Отбора соперника)
-        opp.pressure = Math.max(0, opp.pressure - 5 * c[1] * mult * R(this.val(side, 'pas', ph), this.val(OTHER(side), 'tac', dph)));
+        opp.pressure = Math.max(0, opp.pressure - 7 * c[1] * mult * R(this.val(side, 'pas', ph), this.val(OTHER(side), 'tac', dph)));
         fx.push({ k: 'gain', t: 1, v: g, text: '+' + Math.round(g) + ' пас' });
         const passer = this.credit(side, 'pas', ph, 0.02 * c[1]);
         // у чужой штрафной точный пас выводит партнёра на удар: заряд момента растёт (неточный — сбивает)
@@ -437,7 +437,7 @@
         gain += g;
         ctx.paceGain = (ctx.paceGain || 0) + g;
         // рывок уводит мяч от прессингующих (Скорость против Скорости)
-        opp.pressure = Math.max(0, opp.pressure - 3.5 * c[3] * mult * R(this.val(side, 'pac', ph), this.val(OTHER(side), 'pac', dph)) * (rOk ? 1 : 0.5));
+        opp.pressure = Math.max(0, opp.pressure - 5 * c[3] * mult * R(this.val(side, 'pac', ph), this.val(OTHER(side), 'pac', dph)) * (rOk ? 1 : 0.5));
         fx.push({ k: 'gain', t: 3, v: g, text: '+' + Math.round(g) + (cm > 1 ? ' КОНТРАТАКА' : ' рывок') });
       }
       if (c[4]) { // Отбор у владеющей стороны = борьба за мяч
@@ -552,7 +552,7 @@
       const highUp = arp <= 1; // прессинг на чужой половине
       let press = 0;
       if (c[4]) { // Отбор
-        let p = CFG.pressBase * c[4] * Math.pow(R(this.val(side, 'tac', ph), this.val(aSide, 'dri', aph)), 0.8) * PRESS_M[me.tac.pressing] * Math.sqrt(R(this.val(side, 'sta', ph), this.val(aSide, 'sta', aph)));
+        let p = CFG.pressBase * c[4] * Math.pow(R(this.val(side, 'tac', ph), this.val(aSide, 'dri', aph)), 0.65) * PRESS_M[me.tac.pressing] * Math.sqrt(R(this.val(side, 'sta', ph), this.val(aSide, 'sta', aph)));
         if (plan === 'gegenpress') p *= highUp ? 1.5 : 1.3;
         if (me.tac.line === 2 && highUp) p *= 1.15;
         if (oplan === 'possession') p *= 0.85;
@@ -837,12 +837,12 @@
       else if (kind === 'vlong') q = CFG.longShot * 0.6 + 0.02 * (n - 4);
       q *= 1 + me.shotCharge / 100 * 0.6;
       const f = this.fatF(shooter);
-      const skill = (kind === 'header' ? this.pa(shooter, 'pos') : this.pa(shooter, 'sho')) * 0.7 * f + this.pa(shooter, 'com') * 0.3 * f;
+      const skill = (kind === 'header' ? this.pa(shooter, 'pos') : this.pa(shooter, 'sho')) * 0.75 * f + this.pa(shooter, 'com') * 0.25 * f;
       // особенности бьющего и соперника
       const kq = { box: 'boxQ', long: 'longQ', vlong: 'longQ', header: 'headerQ', fk: 'fkQ' }[kind];
       const oq = { box: 'oppBoxQ', long: 'oppLongQ', vlong: 'oppLongQ', header: 'oppHeaderQ', fk: 'oppLongQ' }[kind];
       q *= this.pm(shooter, 'q') * this.pm(shooter, kq) * this.tmul(OTHER(side), oq) * this.tmul(OTHER(side), 'oppShotQ');
-      q *= Math.pow(R(skill, gk.ref * 0.7 + gk.pos * 0.3), 1.15);
+      q *= Math.pow(R(skill, gk.ref * 0.7 + gk.pos * 0.3), 1.25);
       if (kind !== 'fk') q *= 1 - opp.shield / 260;
       q *= this.atkM(side);
       if (me.tac.plan === 'direct') q *= 0.92;
