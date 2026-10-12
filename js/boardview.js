@@ -208,22 +208,73 @@
       G.FX.ring(p.x, p.y, color, b.sp === 'bomb' ? 120 : 60);
     }
 
+    /* Размер слоя эффектов (поле) */
+    fxSize() { return { W: this.fxLayer.clientWidth || this.cs * 8, H: this.fxLayer.clientHeight || this.cs * 8 }; }
+    /* Занятые области подписей: подпись поднимается вверх, поэтому резервируем и путь её полёта */
+    liveFloats() { const now = performance.now(); return (this._floats = (this._floats || []).filter(f => f.until > now)); }
+
     floatText(text, r, c, color, big) {
       const el = U.el('div.float-text' + (big ? '.big' : ''), { text });
-      el.style.left = ((c + 0.5) * this.cs) + 'px';
-      el.style.top = ((r + 0.5) * this.cs) + 'px';
       el.style.color = color || '#fff';
+      el.style.visibility = 'hidden';
       this.fxLayer.appendChild(el);
-      setTimeout(() => el.remove(), 1500 / Math.min(this.speed, 2));
+      // размеры с запасом на увеличение в анимации (до ×1.15)
+      const { W, H } = this.fxSize(), w = el.offsetWidth * 1.18, h = el.offsetHeight * 1.15, pad = 4;
+      const rise = h * 1.7;   // насколько подпись всплывает за время анимации
+      // не выходим за края поля
+      const cx = x => U.clamp(x, w / 2 + pad, W - w / 2 - pad), cy = y => U.clamp(y, rise + pad, H - h / 2 - pad);
+      const x = cx((c + 0.5) * this.cs), y0 = cy((r + 0.5) * this.cs);
+      // центральная полоса поля отдана баннерам («ЕЩЁ ХОД!», «ГОЛ!» и т. п.)
+      const band = this.bannerBand();
+      // не накладываемся на уже показанные подписи и на полосу баннеров: ищем ближайшее свободное место выше/ниже
+      const busy = this.liveFloats();
+      const hits = y => (y - rise) < band.y2 && (y + h / 2) > band.y1 || busy.some(f => Math.abs(f.x - x) < (f.w + w) / 2 + 6 && (y - rise) < f.y2 + 4 && (y + h / 2) > f.y1 - 4);
+      let y = y0;
+      for (let k = 1; hits(y) && k <= 24; k++) y = cy(y0 + Math.ceil(k / 2) * (h * 0.6 + 6) * (k % 2 ? -1 : 1));
+      if (hits(y)) { el.remove(); return; }   // места нет — подпись не показываем (событие есть в ленте)
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      el.style.visibility = '';
+      const dur = 1500 / Math.min(this.speed, 2);
+      busy.push({ x, w, y1: y - rise, y2: y + h / 2, until: performance.now() + dur * 0.85 });
+      setTimeout(() => el.remove(), dur);
     }
 
+    /* Полоса по центру поля под баннеры */
+    bannerBand() {
+      const { H } = this.fxSize();
+      if (!this._bandH || this._bandCs !== this.cs) {   // реальная высота баннера на текущем размере поля
+        const t = U.el('div.board-banner', { text: 'ЕЩЁ ХОД!' });
+        t.style.visibility = 'hidden'; t.style.animation = 'none';
+        this.fxLayer.appendChild(t); this._bandH = t.offsetHeight * 1.1; t.remove(); this._bandCs = this.cs;
+      }
+      const bh = this._bandH;
+      return { y1: H / 2 - bh / 2 - bh * 0.35 - 6, y2: H / 2 + bh / 2 + 6 };
+    }
+    /* Баннеры по центру поля показываются по очереди, а не перекрывают друг друга */
     banner(text, color) {
+      this._bq = this._bq || [];
+      this._bq.push({ text, color });
+      if (!this._bBusy) this.nextBanner();
+    }
+    nextBanner() {
+      const it = this._bq.shift();
+      if (!it) { this._bBusy = false; return; }
+      this._bBusy = true;
       if (this._banner) this._banner.remove();
-      const el = U.el('div.board-banner', { text });
+      const el = U.el('div.board-banner', { text: it.text });
       this._banner = el;
-      if (color) el.style.setProperty('--bc', color);
+      if (it.color) el.style.setProperty('--bc', it.color);
       this.fxLayer.appendChild(el);
-      setTimeout(() => el.remove(), 1300 / Math.min(this.speed, 2));
+      // длинный текст уменьшаем, чтобы он целиком помещался в поле
+      const { W, H } = this.fxSize(), bw = el.offsetWidth;
+      if (bw * 1.1 > W * 0.92) el.style.fontSize = (parseFloat(getComputedStyle(el).fontSize) * W * 0.92 / (bw * 1.1)) + 'px';   // с запасом на увеличение ×1.08
+      const spd = Math.min(this.speed, 2), dur = 1300 / spd;
+      const bh = el.offsetHeight, bwf = Math.min(el.offsetWidth, W);
+      this.liveFloats().push({ x: W / 2, w: bwf, y1: H / 2 - bh / 2 - bh * 0.4, y2: H / 2 + bh / 2, until: performance.now() + dur * 0.8 });
+      setTimeout(() => el.remove(), dur);
+      // следующий баннер — когда этот прочитан (или сразу, если очередь пуста)
+      setTimeout(() => this.nextBanner(), (this._bq.length ? 650 : 0) / spd + (this._bq.length ? 0 : dur * 0.5));
     }
 
     async playSteps(steps, onStep) {
