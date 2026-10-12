@@ -340,6 +340,8 @@
      Настроение трибун: серия результатов, дерби, кубок, громкие покупки и продажи звёзд, цены на билеты.
      Влияет на спрос, давление трибун и доверие совета. Провальная серия — пустеющая арена — ещё меньше поддержки */
   function fans(c) { return c.fans == null ? 60 : c.fans; }
+  /* Реакция болельщиков на цену билетов за каждый домашний матч */
+  function priceMood(m) { return m <= 0.85 ? 1 : m >= 1.75 ? -5 : m >= 1.45 ? -3 : m >= 1.2 ? -1 : 0; }
   function fansLabel(v) { return v >= 85 ? ['Город влюблён в команду', '😍'] : v >= 65 ? ['Болельщики довольны', '😊'] : v >= 45 ? ['Болельщики спокойны', '😐'] : v >= 25 ? ['Болельщики недовольны', '😠'] : ['Фанаты протестуют', '🔥']; }
   function fansAdd(st, c, d, why) {
     if (!c || !d) return;
@@ -360,7 +362,7 @@
       let d = won === true ? 4 + (my >= 3 ? 2 : 0) : won === false ? -4 - (my <= -3 ? 2 : 0) : (me === 'h' ? -1 : 1);
       if (derby) d *= 1.8;
       if (f.cup) { const o = me === 'h' ? A : H; if (won === true && tierOf(o) < tierOf(c)) d += 4; if (won === false && tierOf(o) > tierOf(c)) d -= 5; }
-      if (me === 'h' && f.env && f.env.tp) d += f.env.tp <= 0.85 ? 0.5 : f.env.tp >= 1.45 ? -1.5 : 0;
+      if (me === 'h' && f.env && f.env.tp) d += priceMood(f.env.tp);   // болельщики помнят цены
       fansAdd(st, c, d, won === false ? (derby ? 'проигрыш в дерби' : 'неудачная серия') : '');
     }
   }
@@ -404,7 +406,7 @@
     let best = null;
     for (const o of opts) {
       // поддержка: давление трибун на гостей (≈ +0.15 очка за матч между 75% и аншлагом) + небольшой плюс к атаке
-      const u = (o.rev / r1) * wMoney * 3 + (o.crowd * 3.5 + (Math.sqrt(o.homeK) - 1) * 20) * wSport + (U.rnd() - 0.5) * 0.3;
+      const u = (o.rev / r1) * wMoney * 3 + (o.crowd * 3.5 + (Math.sqrt(o.homeK) - 1) * 20) * wSport + priceMood(o.m) * 0.3 * (fans(H) < 40 ? 2 : 1) + (U.rnd() - 0.5) * 0.3;
       if (!best || u > best.u) best = { m: o.m, u };
     }
     return best.m;
@@ -626,5 +628,5 @@
   const fmtM = v => (v < 0 ? '−' : '') + '£' + Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1) + ' млн';
   const fmtW = v => '£' + Math.round(v) + ' тыс./нед';
 
-  G.FIN = { CAPACITY, EMB_WAGE, fans, fansLabel, fansAdd, fansAfterMatch, ownerShift, ownerGoal, ownerFunds, PRICES, matchDemand, elastic, fillAt, pricing, aiPrice, setPrice, pres, presOf, presLabel, status, appeal, prestigeSeason, cupTarget, cupStageName, cupGoalText, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
+  G.FIN = { CAPACITY, EMB_WAGE, priceMood, fans, fansLabel, fansAdd, fansAfterMatch, ownerShift, ownerGoal, ownerFunds, PRICES, matchDemand, elastic, fillAt, pricing, aiPrice, setPrice, pres, presOf, presLabel, status, appeal, prestigeSeason, cupTarget, cupStageName, cupGoalText, level, ownerCap, ownerLabel, debtLimit, embargo, lgFin, para, value, fairWage, demand, init, matchday, round, seasonEnd, seasonStart, renew, agentNotes, staffNotes, moodLabel, fines, outgrown, wageBill, squadValue, yearly, projectedIncome, ticket, commercial, operating, fmtM, fmtW, initContract };
 })(typeof window !== 'undefined' ? window : globalThis);

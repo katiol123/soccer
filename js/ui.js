@@ -444,7 +444,7 @@
         const hk = Math.round((Math.sqrt(o.homeK) - 1) * 1000) / 10;
         row.appendChild(el('button.pb-opt' + (o.m === env.tp ? '.on' : ''), { onclick: () => { G.FIN.setPrice(st, f, o.m); LEAGUE.save(st); redraw(); } }, [
           el('b', { text: `£${o.price}` }), el('small', { text: `×${o.m}` }),
-          el('span', { text: `${Math.round(o.fill * 100)}% трибун` }), el('span', { text: `${G.FIN.fmtM(o.rev)}` }), el('span.muted', { text: `📣 ${G.ENGINE.crowdLabel(o.crowd)} (${Math.round(o.crowd * 100)})` })
+          el('span', { text: `${Math.round(o.fill * 100)}% трибун` }), el('span', { text: `${G.FIN.fmtM(o.rev)}` }), el('span.muted', { text: `📣 ${G.ENGINE.crowdLabel(o.crowd)} (${Math.round(o.crowd * 100)})` }), el('span', { text: G.FIN.priceMood(o.m) ? `болельщики ${G.FIN.priceMood(o.m) > 0 ? '+' : ''}${G.FIN.priceMood(o.m)}` : 'болельщики ±0', style: { color: G.FIN.priceMood(o.m) < 0 ? '#e66767' : G.FIN.priceMood(o.m) > 0 ? '#0ca30c' : '' } })
         ]));
       });
       box.appendChild(row);
