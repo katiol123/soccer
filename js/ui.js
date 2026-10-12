@@ -39,9 +39,11 @@
       this.menu();
     },
 
-    show(node) {
+    show(node, quiet) {
       const app = document.getElementById('app');
       const old = app.firstElementChild;
+      // тихая перерисовка того же экрана — без анимации и прокрутки
+      if (quiet && old) { const y = window.scrollY; old.replaceWith(node); window.scrollTo(0, y); return; }
       node.classList.add('enter');
       if (old) {
         old.classList.add('leave');
@@ -782,7 +784,7 @@
     },
 
     /* ---------- Предматчевый экран ---------- */
-    prematch(f) {
+    prematch(f, quiet) {
       const st = this.st, uc = LEAGUE.club(st, st.userClub);
       LEAGUE.fixUserTactics(st);
       TAC.cupMode = !!f.cup;
@@ -797,8 +799,15 @@
         el('button.btn.primary.big', { text: 'На поле ▶', onclick: () => this.playUserMatch(f, oppTac) })
       ]);
       root.appendChild(header);
-      root.appendChild(this.envLine(f));
-      if (f.h === st.userClub && !f.neutral) root.appendChild(this.priceBox(f, () => this.prematch(f)));
+      let envEl = this.envLine(f);
+      root.appendChild(envEl);
+      if (f.h === st.userClub && !f.neutral) {
+        // смена цены обновляет только блок цен и строку условий матча
+        let pb;
+        const redraw = () => { const ne = this.envLine(f), np = this.priceBox(f, redraw); envEl.replaceWith(ne); pb.replaceWith(np); envEl = ne; pb = np; };
+        pb = this.priceBox(f, redraw);
+        root.appendChild(pb);
+      }
       const body = el('div.pm-body');
       const mine = el('div.card.pm-mine', null, [el('h3', { text: 'Ваша тактика' })]);
       const myTac = this.userTac(f);
@@ -806,8 +815,8 @@
         mine.appendChild(el('div.cup-tools', null, [
           el('small.muted', { text: `${G.CUP.NAME}, ${G.CUP.roundName(st, f)}: состав на кубок отдельный — основа на лигу не меняется.` }),
           el('div.cup-btns', null, [
-            el('button.btn.small', { text: '🔄 Резерв от ассистента', title: 'Ассистент даст отдых сильнейшим и самым уставшим', onclick: () => { const k = f.neutral ? 0 : Math.max(3, G.CUP.rotation(uc, opp, f)); const ex = AI.cupRest(uc, opp, f, k) || new Set(); const xi = TAC.bestXI(uc, myTac.formation, { exclude: ex }); myTac.lineup = xi.lineup; myTac.bench = xi.bench; this.prematch(f); } }),
-            el('button.btn.small.ghost', { text: '↺ Основной состав', onclick: () => { st.cupTac = null; this.prematch(f); } })
+            el('button.btn.small', { text: '🔄 Резерв от ассистента', title: 'Ассистент даст отдых сильнейшим и самым уставшим', onclick: () => { const k = f.neutral ? 0 : Math.max(3, G.CUP.rotation(uc, opp, f)); const ex = AI.cupRest(uc, opp, f, k) || new Set(); const xi = TAC.bestXI(uc, myTac.formation, { exclude: ex }); myTac.lineup = xi.lineup; myTac.bench = xi.bench; this.prematch(f, true); } }),
+            el('button.btn.small.ghost', { text: '↺ Основной состав', onclick: () => { st.cupTac = null; this.prematch(f, true); } })
           ])
         ]));
       }
@@ -830,7 +839,7 @@
       theirs.appendChild(ol);
       body.append(mine, theirs);
       root.appendChild(body);
-      this.show(root);
+      this.show(root, quiet);
     },
 
     async playUserMatch(f, oppTac) {
@@ -1539,10 +1548,11 @@
       wrap.appendChild(kpis);
       if (own) {
         const seg = el('div.seg.wrap');
-        G.FIN.PRICES.forEach(m => seg.appendChild(el('button' + (m === (st.ticketM || 1) ? '.on' : ''), { text: `×${m} · £${Math.round(G.FIN.ticket(club) * m)}`, onclick: () => {
+        G.FIN.PRICES.forEach(m => seg.appendChild(el('button' + (m === (st.ticketM || 1) ? '.on' : ''), { text: `×${m} · £${Math.round(G.FIN.ticket(club) * m)}`, onclick: (e) => {
           st.ticketM = m;
           LEAGUE.weekFixtures(st).forEach(fx => { if (!fx.res && fx.h === club.id && fx.env && !fx.neutral) G.FIN.setPrice(st, fx, m); });
-          LEAGUE.save(st); this.hub('finance');
+          LEAGUE.save(st);
+          U.$$('button', seg).forEach(b => b.classList.toggle('on', b === e.currentTarget));
         } })));
         wrap.appendChild(el('div.card.price-default', null, [el('h3', { text: '🎟 Цена билетов по умолчанию' }),
           el('p.muted', { text: 'Дорогие билеты приносят больше денег, но часть болельщиков останется дома — поддержка трибун и домашнее преимущество слабеют. Престижному клубу и в важных матчах болельщики прощают высокие цены. Перед каждым домашним матчем цену можно изменить с прогнозом заполняемости и выручки.' }), seg]));
