@@ -118,6 +118,15 @@
     return b;
   };
 
+  /* Черты тренера: значки с подсказкой (у кого черт нет — «играет без причуд») */
+  UI.coachTraits = (coach, opts) => {
+    const box = el('div.coach-tr');
+    const ct = (coach && coach.ct) || [];
+    if (!ct.length) { if (!(opts && opts.hideEmpty)) box.appendChild(el('span.ct-chip.none', { text: 'Без особых привычек' })); return box; }
+    ct.forEach(id => { const t = G.CTRAITS.LIST[id]; if (t) box.appendChild(el('span.ct-chip', { 'data-tip': `${t.i} ${t.n}\n\nМанера тренера:\n${t.d}` }, [`${t.i} ${t.n}`])); });
+    return box;
+  };
+
   /* Лицо игрока (SVG из генератора); выражение — по текущему настроению */
   UI.face = (p, size, club) => {
     const s = document.createElement('span');

@@ -116,7 +116,10 @@
     if (!f || !f.cup || f.neutral) return 0;
     const gap = TAC.teamRating(club) - TAC.teamRating(opp);
     const lvl = G.FIN.level(club);
-    const k = gap * 1.6 + (lvl <= 6 ? 2 : lvl <= 20 ? 1 : 0) + (f.cr <= 1 ? 1 : 0) + (U.rnd() * 1.5 - 0.5);
+    let k = gap * 1.6 + (lvl <= 6 ? 2 : lvl <= 20 ? 1 : 0) + (f.cr <= 1 ? 1 : 0) + (U.rnd() * 1.5 - 0.5);
+    // черты тренера: «Кубковый» почти не ротирует, «Лига прежде всего» — ротирует сильнее (до полуфинала)
+    if (G.CTRAITS && G.CTRAITS.has(club.coach, 'cup')) k *= 0.35;
+    if (G.CTRAITS && G.CTRAITS.has(club.coach, 'league')) k += 2;
     return Math.round(U.clamp(k, 0, 7));
   }
 

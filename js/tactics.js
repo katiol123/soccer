@@ -115,6 +115,7 @@
       pool.forEach(p => {
         const fitF = 1 - fitW * (1 - (0.55 + 0.45 * p.fit / 100));
         let tv = G.TRAITS ? G.TRAITS.value(p, opts.ctx) : 0;
+        if (opts.bias) tv += opts.bias(p);   // мягкие предпочтения тренера
         // обещание игрового времени арендованному игроку (ИИ его соблюдает)
         if (p.loan && p.loan.to === club.id && G.TR && opts.honorLoans !== false) tv += G.TR.PROMISE[p.loan.promise].bonus;
         const fb = opts.noForm ? 0 : formBonus(p) * lineSuit(p.pos, ROLES[s.role].line);

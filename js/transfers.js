@@ -36,6 +36,7 @@
   }
   const STATUS_TXT = { key: 'Ключевой игрок', starter: 'Игрок основы', rotation: 'Ротация', surplus: 'Запасной' };
 
+  const CH = (c, id) => G.CTRAITS && c && c.coach && G.CTRAITS.has(c.coach, id);
   function core(c) { return U.avg(c.players.map(TAC.overall).sort((a, b) => b - a).slice(0, 14)); }
 
   /* Режим экономии: клуб под запретом или в минусе без денег владельца */
@@ -48,6 +49,7 @@
   /* ИИ-клуб готов отпустить: лишний, возрастной, недовольный или дорогой при распродаже */
   function aiListed(c, p) {
     const s = status(c, p);
+    if (CH(c, 'cleaner') && (s === 'surplus' || (p.mood != null && p.mood < 35))) return true;
     return (s === 'surplus' && (p.age >= 30 || TAC.overall(p) < core(c) - 1.5)) || (p.mood != null && p.mood < 22) || fireSale(c, p);
   }
 
@@ -60,13 +62,18 @@
     if (seller.id !== st.userClub && aiListed(seller, p)) k *= 0.85;
     if (seller.id !== st.userClub && fireSale(seller, p)) k *= 0.8; // распродажа: деньги нужны срочно
     if (seller.fin && seller.fin.balance < 20) k *= 0.9;
+    if (seller.id !== st.userClub) {
+      if (CH(seller, 'trader')) k = Math.max(1.1, k * 0.85);   // торгаш: отпустит, если заметно выше стоимости
+      if (CH(seller, 'tough')) k *= 1.12;                      // жёсткий переговорщик просит больше
+    }
     if (windowState(st).id && windowState(st).id.endsWith('w')) k *= 1.1;
     return Math.max(0.3, Math.round(FIN().value(p) * k * 10) / 10);
   }
   function notForSale(st, seller, p) {
     if (p.loan) return `Игрок в аренде (принадлежит «${(st.clubs.find(c => c.id === p.loan.from) || {}).name}»).`;
     if (posCount(seller, p.pos) <= MIN_POS[p.pos]) return 'Клубу некем заменить игрока на этой позиции.';
-    if (status(seller, p) === 'key' && FIN().level(seller) <= 6 && !aiListed(seller, p)) return 'Ключевой игрок клуба — не продаётся.';
+    if (status(seller, p) === 'key' && FIN().level(seller) <= 6 && !aiListed(seller, p) && !(seller.id !== st.userClub && CH(seller, 'trader'))) return 'Ключевой игрок клуба — не продаётся.';
+    if (seller.id !== st.userClub && CH(seller, 'patriot') && p.academy === seller.id && !aiListed(seller, p)) return 'Воспитанник клуба — тренер не отпустит его.';
     return null;
   }
 
@@ -229,7 +236,7 @@
         return listed ? TAC.overall(p) >= cc - 3.5 : (TAC.overall(p) >= cc + 0.7 && p.age <= 31);
       });
       if (!pool.length) continue;
-      const p = U.pickWeighted(pool, x => (m.listed.includes(x.id) ? 3 : 1) * (1 + Math.max(0, TAC.overall(x) - cc)));
+      const p = U.pickWeighted(pool, x => (m.listed.includes(x.id) ? 3 : 1) * (1 + Math.max(0, TAC.overall(x) - cc)) * (CH(c, 'youth') && x.age <= 23 ? 2 : CH(c, 'ready') && x.age <= 22 ? 0.5 : 1));
       const listed = m.listed.includes(p.id);
       const fee = Math.round(FIN().value(p) * (listed ? U.rand(0.8, 1.05) : U.rand(1.05, 1.4)) * 10) / 10;
       m.offers.push({ id: m.seq++, pid: p.id, from: c.id, fee, expires: Math.min(w.closes - 1, st.round + 2), listed });
@@ -300,7 +307,8 @@
       if (buyer.id === st.userClub || FIN().embargo(buyer)) continue;
       const key = buyer.id + '@' + w.id;
       const short = buyer.players.length < 22;
-      if ((m.ai[key] || 0) >= (short ? 3 : 2) || U.rnd() > (short ? 0.6 : 0.35)) continue;
+      const star = CH(buyer, 'stargazer');   // звездочёт копит на одного сильного
+      if ((m.ai[key] || 0) >= (short ? 3 : star ? 1 : 2) || U.rnd() > (short ? 0.6 : star ? 0.22 : 0.35)) continue;
       const budget = buyer.fin.transferBudget || 0;
       if (budget < 2) continue;
       const coach = buyer.coach, attrs = PLAN_ATTR[coach.plan] || [];
@@ -318,7 +326,9 @@
             if (notForSale(st, seller, p)) continue;
             // топ-клубы не отдают конкурентам игроков основы
             const sst = status(seller, p);
-            if (!fireSale(seller, p) && (sst === 'key' || (sst === 'starter' && FIN().level(seller) <= 6))) continue;
+            if (!fireSale(seller, p) && (sst === 'key' || (sst === 'starter' && FIN().level(seller) <= 6)) && !(CH(seller, 'trader') && sst !== 'key')) continue;
+            if (CH(seller, 'patriot') && p.academy === seller.id && !aiListed(seller, p)) continue;
+            if (star && !nd.lack && ovr < nd.worst + 1.2) continue;
             const fee = asking(st, seller, p);
             if (fee > budget) continue;
             // игрок согласится?
@@ -326,7 +336,13 @@
             if (h.loy >= 16 && (p.mood || 60) >= 55) continue;
             if (h.amb >= 15 && bT - sT >= 6) continue;
             const fit = attrs.length ? U.avg(attrs, k => p.a[k]) - 10 : 0;
-            const score = (ovr - (nd.lack ? nd.cc - 2.5 : nd.worst)) * 2 + fit * 0.15 * (1.3 - coach.adapt) + (p.age <= 23 ? 0.6 : 0) - fee / Math.max(5, budget) * 1.5 + (aiListed(seller, p) ? 0.4 : 0);
+            let score = (ovr - (nd.lack ? nd.cc - 2.5 : nd.worst)) * 2 + fit * 0.15 * (1.3 - coach.adapt) + (p.age <= 23 ? 0.6 : 0) - fee / Math.max(5, budget) * 1.5 + (aiListed(seller, p) ? 0.4 : 0);
+            // манера тренера-покупателя
+            const head = U.clamp((p.pot == null ? ovr + 1 : p.pot) - ovr, 0, 4);
+            if (CH(buyer, 'youth')) score += p.age <= 23 ? 1 + head * 0.2 : p.age >= 29 ? -0.5 : 0;
+            if (CH(buyer, 'ready')) score += p.age >= 25 && p.age <= 30 ? 0.6 : p.age <= 22 ? -0.8 : 0;
+            if (CH(buyer, 'economist')) score += -fee / Math.max(5, budget) * 1.5 + (p.contract <= 1 ? 0.8 : 0);
+            if (star) score += (ovr - nd.worst) * 1 + (ovr - nd.cc) * 0.8 + fee / Math.max(5, budget) * 1.5;   // звездочёт: качество важнее цены
             cands.push({ p, seller, fee, score, fit });
           }
         }
@@ -335,7 +351,7 @@
       if (!cands.length) continue;
       cands.sort((a, b) => b.score - a.score);
       const pick = cands[Math.min(cands.length - 1, U.rnd() < 0.7 ? 0 : U.randInt(0, 2))];
-      const fee = Math.round(pick.fee * U.rand(1, 1.08) * 10) / 10;
+      const fee = Math.round(pick.fee * (CH(buyer, 'tough') ? U.rand(0.97, 1.02) : U.rand(1, 1.08)) * 10) / 10;
       const wage = Math.round(Math.max(pick.p.wage * 1.05, FIN().fairWage(pick.p) * (1 + ((pick.p.h || {}).amb - 10) * 0.02)));
       const yrs = pick.p.age <= 24 ? U.randInt(4, 5) : pick.p.age <= 28 ? U.randInt(3, 4) : 2;
       const why = need.lack ? `закрывает нехватку ${POS_GEN[need.pos]}` : `усиливает ${POS_ACC[need.pos]}`;
@@ -352,7 +368,7 @@
 
   /* Переполненный состав: отчисляем слабейших «лишних» */
   function trimSquad(st, c) {
-    while (c.players.length > 28) {
+    while (c.players.length > (CH(c, 'cleaner') ? 26 : 28)) {
       const surplus = c.players.filter(p => !p.loan && posCount(c, p.pos) > MIN_POS[p.pos] + 1).sort((a, b) => TAC.overall(a) - TAC.overall(b));
       if (!surplus.length) break;
       G.CAR.release(st, c, surplus[0], 'trim');
@@ -553,19 +569,20 @@
     const m = market(st); m.ail = m.ail || {};
     const deals = [];
     for (const owner of st.clubs) {
-      if (owner.id === st.userClub || FIN().level(owner) > 10) continue;
+      const loaner = CH(owner, 'loaner');
+      if (owner.id === st.userClub || (FIN().level(owner) > 10 && !loaner)) continue;
       const kids = owner.players.filter(p => !p.loan && p.age <= 22 && ['surplus', 'rotation'].includes(status(owner, p)) && posCount(owner, p.pos) > MIN_POS[p.pos] + 1 && p.moved !== w.id);
       for (const p of kids) {
-        if (U.rnd() > 0.25 || (m.ail[owner.id + w.id] || 0) >= 2) continue;
+        if (U.rnd() > (loaner ? 0.5 : 0.25) || (m.ail[owner.id + w.id] || 0) >= 2) continue;
         const ovr = TAC.overall(p);
-        const takers = st.clubs.filter(c => c !== owner && c.id !== st.userClub && !FIN().embargo(c) && loansIn(c).length < 2 && c.players.length < 28).map(c => {
+        const takers = st.clubs.filter(c => c !== owner && c.id !== st.userClub && !FIN().embargo(c) && loansIn(c).length < (CH(c, 'loaner') ? 3 : 2) && c.players.length < 28).map(c => {
           const same = c.players.filter(x => x.pos === p.pos).sort((a, b) => TAC.overall(b) - TAC.overall(a));
           const worst = same.length >= STARTERS[p.pos] ? TAC.overall(same[STARTERS[p.pos] - 1]) : 0;
-          return { c, fit: ovr - worst };
-        }).filter(x => x.fit >= -0.8).sort((a, b) => b.fit - a.fit);
+          return { c, fit: ovr - worst, pref: CH(c, 'loaner') ? 0.6 : 0 };
+        }).filter(x => x.fit >= -0.8 - x.pref).sort((a, b) => (b.fit + b.pref) - (a.fit + a.pref));
         if (!takers.length) continue;
         const t = takers[0];
-        moveLoan(st, p, owner, t.c, { share: 0.6, promise: t.fit >= 0 ? 'start' : 'rot', fee: 0, option: null });
+        moveLoan(st, p, owner, t.c, { share: 0.6, promise: t.fit >= 0 ? 'start' : t.fit >= -0.8 ? 'rot' : 'none', fee: 0, option: null });
         m.ail[owner.id + w.id] = (m.ail[owner.id + w.id] || 0) + 1;
         deals.push(`🤝 Аренда за игровой практикой: ${p.name} (${p.age}, ${ovr.toFixed(1)}) из «${owner.name}» в «${t.c.name}».`);
       }

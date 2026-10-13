@@ -163,11 +163,12 @@
     if (!fa.length) return;
     for (const c of st.clubs) {
       if (c.id === st.userClub) continue;
-      if (!force && U.rnd() > 0.2) continue;
+      const eco = G.CTRAITS.has(c.coach, 'economist');   // экономист чаще ищет среди свободных агентов
+      if (!force && U.rnd() > (eco ? 0.4 : 0.2)) continue;
       if (FIN().embargo(c) && c.players.length >= 20) continue; // под запретом — только в крайнем случае
-      const needs = TR().needs(c).filter(n => n.lack > 0 || c.players.length < 22);
+      const needs = TR().needs(c).filter(n => n.lack > 0 || c.players.length < 22 || (eco && n.gap >= 0.6 && c.players.length < 26));
       for (const nd of needs.slice(0, 2)) {
-        const cand = fa.filter(p => p.pos === nd.pos && TAC.overall(p) >= nd.cc - 3).sort((a, b) => TAC.overall(b) - TAC.overall(a))[0];
+        const cand = fa.filter(p => p.pos === nd.pos && TAC.overall(p) >= (nd.lack || c.players.length < 22 ? nd.cc - 3 : nd.worst + 0.3)).sort((a, b) => TAC.overall(b) - TAC.overall(a))[0];
         if (!cand) continue;
         const d = faDemand(st, cand);
         const r = signFree(st, c.id, cand.id, d.wage, U.randInt(d.years[0], d.years[1]), true);
@@ -198,10 +199,18 @@
         // ИИ: продлевает нужных, отпускает возрастных запасных; в режиме экономии продлевает только молодых ключевых
         const s = TR().status(c, p), tight = TR().austerity(c);
         const posN = c.players.filter(x => x.pos === p.pos).length;
-        if ((s === 'surplus' && p.age >= 29) || (p.age >= 32 && s !== 'key' && U.rnd() < 0.5) || (tight && !(s === 'key' && p.age <= 29))) {
+        const ch = id => G.CTRAITS.has(c.coach, id);
+        const ownKid = ch('patriot') && p.academy === c.id && p.age < 33;   // патриот держится за воспитанников
+        const vetGo = ch('generous') ? 0.25 : 0.5;
+        const cleanGo = ch('cleaner') && ((s === 'surplus' && p.age >= 26) || (s === 'rotation' && p.age >= 30) || (p.mood != null && p.mood < 30));
+        if (!ownKid && ((s === 'surplus' && p.age >= 29) || cleanGo || (p.age >= 32 && s !== 'key' && U.rnd() < vetGo) || (tight && !(s === 'key' && p.age <= 29)))) {
           if (posN > TR().MIN_POS[p.pos] + 1) { leaving.push(p); return; }
         }
-        const d = FIN().demand(st, p, c); p.wage = tight ? Math.round(Math.min(d.wage, p.wage * 0.9)) : d.wage; p.contract = U.randInt(d.years[0], d.years[1]);
+        const d = FIN().demand(st, p, c);
+        let wage = d.wage;
+        if (ch('generous')) wage *= 1.05;                                   // щедрый: на условиях игрока и с надбавкой
+        if (ch('tough')) wage = Math.max(p.wage * 0.95, d.wage * 0.9);       // жёсткий: ниже запрошенного
+        p.wage = Math.round(tight ? Math.min(wage, p.wage * 0.9) : wage); p.contract = U.randInt(d.years[0], d.years[1]);
       });
       if (!leaving.length) continue;
       leaving.forEach(p => release(st, c, p, 'contract'));
@@ -262,7 +271,8 @@
     const f1 = U.pick(FORMS), f2 = U.pick(FORMS.filter(f => f !== f1));
     const name = U.pick(COACH_FIRST) + ' ' + U.pick(COACH_LAST);
     const r = () => Math.round(U.rand(0.6, 1.8) * 10) / 10;
-    return { id: 'c_' + c.id + '_' + Math.floor(Math.random() * 1e6), name, nat: U.pick(NATS), formations: [f1, f2], plan, mentality: r(), pressing: plan === 'gegenpress' ? 1.8 : r(), line: r(), adapt: Math.round(U.rand(0.2, 0.9) * 100) / 100, skill: Math.round(U.rand(0.72, 0.9) * 100) / 100, temper: Math.round(U.rand(0.3, 0.8) * 100) / 100, subAt: U.randInt(58, 67), motto: MOTTOS[plan], hired: true };
+    const tier = (G.DATA.LEAGUES[c.league] || {}).tier || 2;
+    return { id: 'c_' + c.id + '_' + Math.floor(Math.random() * 1e6), ct: G.CTRAITS.roll(tier), name, nat: U.pick(NATS), formations: [f1, f2], plan, mentality: r(), pressing: plan === 'gegenpress' ? 1.8 : r(), line: r(), adapt: Math.round(U.rand(0.2, 0.9) * 100) / 100, skill: Math.round(U.rand(0.72, 0.9) * 100) / 100, temper: Math.round(U.rand(0.3, 0.8) * 100) / 100, subAt: U.randInt(58, 67), motto: MOTTOS[plan], hired: true };
   }
 
   /* ИИ-клубы увольняют неудачливых тренеров (≈1/3, 1/2 и 3/4 сезона, в каждой лиге) */
@@ -313,6 +323,7 @@
     st.sacked = null;
     if (TR()) { const m = TR().market(st); m.listed = []; m.offers = []; m.short = []; }
     st.career = (st.career || []).concat([{ club: nc.id, season: st.seasonName, round: st.round + 1 }]);
+    coachTraits(st);
     st.news.push({ r: st.round, text: `🤝 Вы возглавили «${nc.name}». Новый вызов, новая цель — ${st.board.target}-е место.` });
   }
   function toSpectator(st) {
@@ -334,7 +345,21 @@
     }
   }
 
+  /* Черты тренеров: недостающие — разыграть по уровню лиги; в каждой лиге хотя бы один тренер ИИ с двумя чертами */
+  function coachTraits(st) {
+    const CT = G.CTRAITS;
+    for (const lid of G.LEAGUE.leagueIds(st)) {
+      const tier = (G.DATA.LEAGUES[lid] || {}).tier || 2;
+      const ai = st.clubs.filter(c => (c.league || st.lg) === lid && c.id !== st.userClub && c.coach);
+      ai.forEach(c => { if (!Array.isArray(c.coach.ct)) c.coach.ct = CT.roll(tier); });
+      if (ai.length && !ai.some(c => c.coach.ct.length >= 2)) {
+        const c = U.pick(ai.filter(x => x.coach.ct.length === 1).length ? ai.filter(x => x.coach.ct.length === 1) : ai);
+        c.coach.ct = c.coach.ct.length === 1 ? CT.addOne(c.coach.ct) : CT.roll(tier, 2);
+      }
+    }
+  }
   function ensure(st) {
+    coachTraits(st);
     if (!st.fa) { st.fa = []; seedPool(st, 25); }
     pool(st);
     st.clubs.forEach(c => c.players.forEach(p => { if (p.pot == null) rollPot(p); }));
@@ -344,9 +369,10 @@
     const K = G.LEAGUE.cal(st);
     if (st.round === K.retire) announceRetirements(st);
     aiSackings(st);
+    coachTraits(st);
     if (st.round > 0 && st.round % K.freeEvery === 0) { aiFree(st, false); capPool(st, POOL_MAX + 20); }
     checkUser(st, false);
   }
 
-  G.CAR = { trimAI, rollPot, potStars, academy, announceRetirements, retire, pool, release, userRelease, releaseCost, faDemand, signFree, aiFree, takeFromPool, contractsEnd, genCoach, aiSackings, checkUser, jobOffers, takeJob, toSpectator, ensure, afterRound };
+  G.CAR = { coachTraits, trimAI, rollPot, potStars, academy, announceRetirements, retire, pool, release, userRelease, releaseCost, faDemand, signFree, aiFree, takeFromPool, contractsEnd, genCoach, aiSackings, checkUser, jobOffers, takeJob, toSpectator, ensure, afterRound };
 })(typeof window !== 'undefined' ? window : globalThis);

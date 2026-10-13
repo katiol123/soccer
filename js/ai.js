@@ -2,6 +2,20 @@
 (function (G) {
   'use strict';
   const U = G.U, TAC = G.TAC;
+  const CH = (c, id) => G.CTRAITS && G.CTRAITS.has(c, id);
+  const CHARACTER = ['leader', 'bigGame', 'clutch', 'calm', 'motivator'];
+  /* Мягкие предпочтения тренера при выборе состава (добавка к ценности игрока, ±0.2–0.35 — не перевешивает уровень) */
+  function coachBias(club) {
+    const c = club.coach, b = [];
+    if (CH(c, 'youth')) b.push(p => p.age <= 21 ? 0.3 : 0);
+    if (CH(c, 'patriot')) b.push(p => p.academy === club.id ? 0.35 : 0);
+    if (CH(c, 'psych')) b.push(p => (p.mood != null && p.mood < 40) ? 0.3 : 0);
+    if (CH(c, 'character')) b.push(p => (p.tr || []).some(t => CHARACTER.includes(t)) ? 0.2 : 0);
+    if (CH(c, 'hierarchy') && G.TR) { const core = new Set(club.players.filter(p => ['key', 'starter'].includes(G.TR.status(club, p))).map(p => p.id)); b.push(p => core.has(p.id) ? 0.25 : 0); }
+    return b.length ? p => b.reduce((s, f) => s + f(p), 0) : null;
+  }
+  /* Насколько сильно тренер учитывает свежесть при выборе состава */
+  function coachFitW(c) { return CH(c, 'rotator') ? 1.8 : CH(c, 'hierarchy') ? 0.6 : 1; }
 
   const ATTACK_SHIFT = { '5-4-1': '4-4-2', '5-3-2': '3-5-2', '4-1-4-1': '4-3-3', '4-4-2': '4-3-3', '4-2-3-1': '4-3-3', '3-5-2': '3-4-3', '4-3-3': '3-4-3', '3-4-3': '3-4-3' };
   const DEFENSE_SHIFT = { '3-4-3': '5-4-1', '4-3-3': '4-1-4-1', '4-2-3-1': '4-1-4-1', '4-4-2': '5-4-1', '3-5-2': '5-3-2', '4-1-4-1': '5-4-1', '5-3-2': '5-4-1', '5-4-1': '5-4-1' };
@@ -38,7 +52,7 @@
     if (!cupF && opts && opts.nextCup) {
       const nc = opts.nextCup, stage = nc.f.cr || 0, ncR = TAC.teamRating(nc.opp);
       const important = stage >= 4 || (stage >= 3 && myR - oppR > 0.8) || (stage >= 2 && ncR > myR + 0.5 && myR - oppR > 1.2);
-      if (important && U.rnd() < 0.35 + c.adapt * 0.6) {
+      if (important && U.rnd() < 0.35 + c.adapt * 0.6 + (CH(c, 'cup') ? 0.2 : 0) - (CH(c, 'league') ? 0.3 : 0)) {
         const avail = club.players.filter(p => TAC.available(p));
         const k = U.clamp(Math.round(c.adapt * 2 + (stage >= 5 ? 1 : 0)), 1, 3);
         if (avail.length - k >= 14) {
@@ -49,10 +63,21 @@
       }
     }
     const HAS = G.TRAITS.has;
+    const bias = coachBias(club), fitWeight = coachFitW(c);
+    // ротатор: время от времени даёт отдых одному из основы, даже если тот не слишком устал
+    let rotRest = null;
+    if (CH(c, 'rotator') && !cupF && U.rnd() < 0.45) {
+      const avail = club.players.filter(p => TAC.available(p) && p.pos !== 'GK' && !(exclude && exclude.has(p.id)));
+      const cand = avail.filter(p => p.fit < 94 && ['key', 'starter'].includes(G.TR ? G.TR.status(club, p) : 'starter'));
+      if (cand.length && avail.length >= 16) {
+        rotRest = cand.sort((a, b) => a.fit - b.fit)[0];
+        exclude = new Set([...(exclude || []), rotRest.id]);
+      }
+    }
     // схема
     let best = null;
     for (const f of Object.keys(TAC.FORMATIONS)) {
-      const xi = TAC.bestXI(club, f, { ctx, exclude, wx: opts && opts.env ? opts.env.weather : null });
+      const xi = TAC.bestXI(club, f, { ctx, exclude, wx: opts && opts.env ? opts.env.weather : null, bias, fitWeight });
       let score = TAC.lineupRating(club, f, xi.lineup);
       const pi = c.formations.indexOf(f);
       if (pi >= 0) score += (pi === 0 ? 0.9 : 0.6) * (1.25 - c.adapt);
@@ -74,6 +99,7 @@
     // менталитет
     let ment = c.mentality + c.adapt * (diff > 1.2 ? 0.5 : diff < -1.2 ? -0.7 : 0);
     if (isHome) ment += 0.15;
+    if (CH(c, 'spectacle')) ment = Math.max(ment + 0.4, 1);   // зрелищный футбол: не ниже нормального настроя
     const mentality = U.clamp(Math.round(ment), 0, 2);
     if (diff < -1.2 && c.adapt > 0.4) notes.push(`Соперник сильнее (${oppR.toFixed(1)} против ${myR.toFixed(1)}) — осторожный подход.`);
     if (diff > 1.2) notes.push(`Мы фавориты — играем первым номером.`);
@@ -91,6 +117,7 @@
       if (diff < -1.5 && (k === 'park' || k === 'counter')) s += 1.3 * c.adapt;
       if (diff > 1.5 && (k === 'possession' || k === 'gegenpress')) s += 0.8 * c.adapt;
       if (k === 'park' && diff > -1) s -= 3;
+      if (k === 'park' && CH(c, 'spectacle')) s -= 10;
       if (opp.coach.line >= 1.5 && k === 'counter') s += 0.7 * c.adapt;
       if (!bestPlan || s > bestPlan.s) bestPlan = { k, s, s0: s };
       // погода: гибкий тренер подстраивает план под условия
@@ -133,6 +160,7 @@
       const ins = best.xi.lineup.map(id => map[id]).filter(p => p && sens(p) < 0.5);
       if (out.length || ins.length) notes.push(`${W.i} ${W.n}: ${ins.length ? `ставка на ${ins.slice(0, 2).map(p => p.name).join(', ')}` : ''}${ins.length && out.length ? ', ' : ''}${out.length ? `${out[0].name} в такую погоду начнёт в запасе` : ''}.`);
     }
+    if (rotRest) notes.push(`Ротация по привычке тренера: ${rotRest.name} сегодня отдыхает.`);
     if (saved) notes.unshift(`Впереди ${opts.nextCup.name} Кубка Англии против «${opts.nextCup.opp.name}» — бережём ${saved.map(p => p.name).join(', ')}.`);
     const xiP = best.xi.lineup.map(id => map[id]).filter(Boolean);
     const bg = xiP.filter(p => ctx.strongOpp ? HAS(p, 'bigGame') : ctx.weakOpp ? HAS(p, 'flatTrack') : false);
@@ -209,10 +237,14 @@
     const m = mem(match, side), c = ts.coach;
     const min = match.minute();
     const diff = match.score[side] - match.score[match.other(side)];
-    // замены уставших
-    if (ts.subsLeft > 0 && min >= Math.max(46, c.subAt - 8) && match.moveNo - m.lastSubMove >= 3) {
+    // замены уставших (черты сдвигают сроки, но травмы и сильная усталость — всегда)
+    const early = CH(c, 'earlySubs'), late = CH(c, 'lateSubs');
+    const subFrom = early ? Math.max(46, c.subAt - 16) : late ? Math.max(66, c.subAt + 4) : Math.max(46, c.subAt - 8);
+    if (ts.subsLeft > 0 && min >= 46 && match.moveNo - m.lastSubMove >= 3) {
       const risky = p => G.TRAITS.has(p, 'argue') || G.TRAITS.has(p, 'hothead') || G.TRAITS.has(p, 'hard');
-      const tired = ts.onPitch.filter(x => x.p && x.slot.role !== 'GK' && (x.p.m.fit < 60 - (1 - c.temper) * 6 || x.p.m.inj || (x.p.m.yc && min < 75 && c.adapt > 0.6 && x.p.m.fit < 75) || (x.p.m.yc && risky(x.p) && min >= 50) || (G.TRAITS.has(x.p, 'nervous') && min >= 70 && diff <= 0 && c.adapt > 0.4)))
+      const tiredLim = 60 - (1 - c.temper) * 6 + (early ? 6 : 0);
+      const tired = ts.onPitch.filter(x => x.p && x.slot.role !== 'GK' && (x.p.m.fit < tiredLim || x.p.m.inj || (x.p.m.yc && min < 75 && (c.adapt > 0.6 || early) && x.p.m.fit < 75) || (x.p.m.yc && risky(x.p) && min >= 50) || (G.TRAITS.has(x.p, 'nervous') && min >= 70 && diff <= 0 && c.adapt > 0.4)))
+        .filter(x => min >= subFrom || x.p.m.inj || x.p.m.fit < 45)
         .sort((a, b) => a.p.m.fit - b.p.m.fit);
       if (tired.length) {
         const x = tired[0];
@@ -289,14 +321,15 @@
     const possShare = ts.st.poss / Math.max(1, ts.st.poss + opp.st.poss);
     const minK = Math.max(0.5, match.minute() / 45); // нормировка на сыгранное время
     let changes = 0;
-    const act = (chance) => changes < 2 && U.rnd() < chance;
+    const calmK = CH(c, 'calm') ? 0.45 : 1;   // невозмутимый реже вмешивается
+    const act = (chance) => changes < 2 && U.rnd() < chance * calmK;
 
     // 1. Нас душат прессингом (соперник часто отбирает мяч)
     if (opp.st.wins >= ts.st.wins + 2 && act(c.adapt + 0.15)) {
       if (me.tech >= 13 && me.tech >= them.tac) {
         if (setPlan(match, side, 'possession', `Нас прессингуют, но у нас техничные ребята (техника ${me.tech.toFixed(1)}) — держим мяч и выходим из-под давления`)) changes++;
       } else if (setPlan(match, side, 'direct', `Нас душат прессингом, а с техникой (${me.tech.toFixed(1)}) не перепасовать — играем проще, через верх`)) changes++;
-      else if (ts.tac.mentality > 0 && diff >= 0) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, 'Прямой футбол не спасает от прессинга — отходим ниже и бьём на контратаку.'); changes++; }
+      else if (ts.tac.mentality > (CH(c, 'spectacle') ? 1 : 0) && diff >= 0) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, 'Прямой футбол не спасает от прессинга — отходим ниже и бьём на контратаку.'); changes++; }
     }
     // 2. Владеем, но не создаём (стерильное владение)
     if (possShare >= 0.56 && ts.st.xg < 0.35 * minK && diff <= 0 && act(c.adapt)) {
@@ -312,7 +345,7 @@
     // 4. Соперник создаёт слишком много
     if (opp.st.xg > ts.st.xg + 0.5 * minK && act(c.adapt + 0.1)) {
       if (ts.tac.line >= 1 && them.fwPac > me.dfPac + 2.8) { match.setTactic(side, 'line', ts.tac.line - 1); coachSay(match, side, `Их быстрые нападающие убегают за спину — опускаем линию обороны.`); changes++; }
-      else if (diff >= 0 && ts.tac.mentality > 0) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, 'Слишком много отдаём сопернику — чуть осторожнее.'); changes++; }
+      else if (diff >= 0 && ts.tac.mentality > (CH(c, 'spectacle') ? 1 : 0)) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, 'Слишком много отдаём сопернику — чуть осторожнее.'); changes++; }
       else if (ts.tac.pressing < 2 && them.tech < 13) { match.setTactic(side, 'pressing', ts.tac.pressing + 1); coachSay(match, side, 'Они слабы технически — давим выше и не даём им строить атаки.'); changes++; }
     }
     // 5. Попадаемся в офсайд
@@ -330,8 +363,8 @@
       match.setTactic(side, 'pressing', ts.tac.pressing - 1);
       coachSay(match, side, `${ts.st.yc} жёлтых — аккуратнее в отборе, иначе останемся вдесятером.`); changes++;
     }
-    // 8. В перерыве при крупном проигрыше — смелее
-    if (isHalf && diff <= -2 && c.adapt > 0.3) {
+    // 8. В перерыве при крупном проигрыше — смелее (ва-банк — уже при −1)
+    if (isHalf && (diff <= -2 || (diff <= -1 && CH(c, 'allin'))) && (c.adapt > 0.3 || CH(c, 'allin')) && U.rnd() < calmK + 0.3) {
       const nf = ATTACK_SHIFT[ts.tac.formation];
       if (nf !== ts.tac.formation && ts.redCount === 0) { match.setFormation(side, nf); coachSay(match, side, `В перерыве: переходим на ${nf}.`); }
       if (ts.tac.mentality < 2) { ts.tac.mentality = 2; coachSay(match, side, 'Терять нечего — все вперёд!'); }
@@ -345,23 +378,25 @@
   function scoreReaction(match, side, stage) {
     const ts = match.t[side], c = ts.coach, os = match.other(side);
     const diff = match.score[side] - match.score[os];
-    const react = c.temper * 0.6 + c.adapt * 0.6;
+    const react = (c.temper * 0.6 + c.adapt * 0.6) * (CH(c, 'calm') ? 0.5 : 1);
+    const allin = CH(c, 'allin'), spect = CH(c, 'spectacle'), prag = CH(c, 'pragmatic');
     const me = liveProfile(match, side), them = liveProfile(match, os);
-    if (diff < 0 && U.rnd() < react + 0.2) {
+    if (diff < 0 && U.rnd() < react + 0.2 + (allin ? 0.35 : 0)) {
       if (ts.tac.mentality < 2) { match.setTactic(side, 'mentality', ts.tac.mentality + 1); coachSay(match, side, 'Проигрываем — вперёд! Менталитет атакующий.'); }
-      if (stage >= 2 && c.adapt > 0.35) {
+      if (stage >= 2 && (c.adapt > 0.35 || allin)) {
         const [plan, why] = chasePlan(me, them, match.t[os]);
         setPlan(match, side, plan, why);
       }
-      if (stage >= 2 && c.adapt > 0.5 && ATTACK_SHIFT[ts.tac.formation] !== ts.tac.formation && ts.redCount === 0) {
+      if ((stage >= 2 || allin) && (c.adapt > 0.5 || allin) && ATTACK_SHIFT[ts.tac.formation] !== ts.tac.formation && ts.redCount === 0) {
         const nf = ATTACK_SHIFT[ts.tac.formation];
         match.setFormation(side, nf);
         coachSay(match, side, `Перестройка на ${nf} — больше людей в атаке.`);
       }
       if (stage === 3 && ts.tac.pressing < 2 && me.fit > 45) { match.setTactic(side, 'pressing', 2); coachSay(match, side, 'Прессинг на максимум!'); }
-    } else if (diff > 0 && U.rnd() < react + (diff === 1 ? 0.15 : -0.1)) {
-      if (stage >= 2 && ts.tac.mentality > 0 && c.mentality < 1.7) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, 'Удерживаем счёт, без лишнего риска.'); }
-      if (stage === 3 && diff === 1 && c.adapt > 0.5) {
+    } else if (diff > 0 && U.rnd() < react + (diff === 1 ? 0.15 : -0.1) + (prag ? 0.35 : 0)) {
+      // зрелищный футбол: настрой не ниже нормального и без глухой обороны
+      if ((stage >= 2 || prag) && ts.tac.mentality > (spect ? 1 : 0) && (c.mentality < 1.7 || prag)) { match.setTactic(side, 'mentality', ts.tac.mentality - 1); coachSay(match, side, prag ? 'Ведём — теперь главное не пропустить.' : 'Удерживаем счёт, без лишнего риска.'); }
+      if (!spect && ((stage === 3 && c.adapt > 0.5) || (prag && stage >= 2)) && diff === 1) {
         const [plan, why] = holdPlan(me);
         if (plan === 'park') {
           const nf = DEFENSE_SHIFT[ts.tac.formation];
@@ -382,7 +417,8 @@
     const c = ts.coach;
     diagnose(match, side, true);
     // уставшие и предупреждённые
-    const tired = ts.onPitch.filter(x => x.p && x.slot.role !== 'GK' && (x.p.m.fit < 66 || (x.p.m.yc && c.adapt > 0.7))).slice(0, 2);
+    const early = CH(c, 'earlySubs'), late = CH(c, 'lateSubs');
+    const tired = ts.onPitch.filter(x => x.p && x.slot.role !== 'GK' && (x.p.m.fit < (early ? 72 : late ? 55 : 66) || (x.p.m.yc && (c.adapt > 0.7 || early) && !late))).slice(0, 2);
     for (const x of tired) {
       const sub = bestSub(ts, x.p);
       if (sub && ts.subsLeft > 0) { match.substitute(side, x.p.id, sub.id, true); match.say('sub', `Замена в перерыве: ${sub.name} вместо ${x.p.name}.`, side); }
@@ -394,7 +430,8 @@
     if (ts.ctrl !== 'ai') return;
     const diff = match.score[side] - match.score[match.other(side)];
     const min = match.minute();
-    if (diff === -1 && min > 70 && ts.tac.mentality < 2 && U.rnd() < ts.coach.temper) {
+    const cc = ts.coach;
+    if (diff === -1 && min > (CH(cc, 'allin') ? 55 : 70) && ts.tac.mentality < 2 && U.rnd() < (CH(cc, 'allin') ? Math.max(0.75, cc.temper) : cc.temper) * (CH(cc, 'calm') ? 0.5 : 1)) {
       ts.tac.mentality = 2;
       coachSay(match, side, 'Пропустили — сразу вперёд!');
     }

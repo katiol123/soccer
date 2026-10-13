@@ -600,7 +600,7 @@
         if (p.lp === st.round) p.mood += 2.5 + (res[c.id] > 0 ? 1 : 0);
         else if (TAC.available(p)) {
           const imp = U.clamp((TAC.overall(p) - core) / 2 + 1, 0, 3);
-          p.mood -= (1.2 + imp * 1.4) * (0.4 + amb / 16);
+          p.mood -= (1.2 + imp * 1.4) * (0.4 + amb / 16) * (c.id !== st.userClub && G.CTRAITS && G.CTRAITS.has(c.coach, 'psych') ? 0.75 : 1);   // психолог смягчает обиду запасных
         }
         if (res[c.id] != null) p.mood += res[c.id] * (amb / 10);
         p.mood += (60 - p.mood) * 0.06;

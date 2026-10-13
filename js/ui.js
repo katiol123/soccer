@@ -371,6 +371,7 @@
         this.envLine(f),
         el('div.nm-scout', null, [
           el('div.nm-scout-h', null, [el('span', { text: '🔎 Скаутский отчёт' }), el('b', { text: `${opp.coach.name}` })]),
+          UI.coachTraits(opp.coach, { hideEmpty: true }),
           el('p', { text: opp.coach.motto }),
           el('div.cd-tags', null, [el('span', { text: 'Ожидаемая схема: ' + pred.formation }), el('span', { text: TAC.PLANS[pred.plan].icon + ' ' + TAC.PLANS[pred.plan].n }), el('span', { text: 'Менталитет: ' + TAC.MENTALITY[pred.mentality] }), el('span', { text: 'Прессинг: ' + TAC.PRESSING[pred.pressing] })])
         ]),
@@ -842,7 +843,7 @@
       }
       mine.appendChild(UI.TacticsEditor(UI.prematchModel(uc, myTac)));
       const theirs = el('div.card.pm-opp', null, [el('h3', { text: `Соперник: ${opp.name}` })]);
-      theirs.appendChild(el('div.pm-coach', null, [el('b', { text: `${opp.coach.name} (${opp.coach.nat})` }), el('p', { text: opp.coach.motto })]));
+      theirs.appendChild(el('div.pm-coach', null, [el('b', { text: `${opp.coach.name} (${opp.coach.nat})` }), UI.coachTraits(opp.coach, { hideEmpty: true }), el('p', { text: opp.coach.motto })]));
       theirs.appendChild(el('div.cd-tags', null, [el('span', { text: oppTac.formation }), el('span', { text: TAC.PLANS[oppTac.plan].icon + ' ' + TAC.PLANS[oppTac.plan].n }), el('span', { text: 'Менталитет: ' + TAC.MENTALITY[oppTac.mentality] }), el('span', { text: 'Прессинг: ' + TAC.PRESSING[oppTac.pressing] }), el('span', { text: 'Линия: ' + TAC.LINE[oppTac.line] })]));
       const map0 = TAC.playerMap(opp);
       const notes = el('div.pm-notes', null, [el('small', { text: 'Решения тренера соперника:' })].concat(oppTac.notes.map(n => el('div', { text: '🧠 ' + n }))));
@@ -1798,7 +1799,7 @@
         wrap.appendChild(card);
       } else {
         const c = club.coach;
-        wrap.appendChild(el('div.card.coach-card', null, [UI.crest(club, 64), el('div', null, [el('h3', { text: club.name }), el('b', { text: `Тренер: ${c.name} (${c.nat})` }), el('p', { text: c.motto }),
+        wrap.appendChild(el('div.card.coach-card', null, [UI.crest(club, 64), el('div', null, [el('h3', { text: club.name }), el('b', { text: `Тренер: ${c.name} (${c.nat})` }), UI.coachTraits(c), el('p', { text: c.motto }),
           el('div.cd-tags', null, [el('span', { text: `⭐ Престиж ${Math.round(G.FIN.pres(club))} · ${G.FIN.presLabel(G.FIN.pres(club))}` }), el('span', { text: 'Схемы: ' + c.formations.join(', ') }), el('span', { text: TAC.PLANS[c.plan].icon + ' ' + TAC.PLANS[c.plan].n }), el('span', { text: 'Менталитет ' + TAC.MENTALITY[Math.round(c.mentality)] }), el('span', { text: 'Прессинг ' + TAC.PRESSING[Math.round(c.pressing)] }), el('span', { text: 'Гибкость ' + Math.round(c.adapt * 100) + '%' }), el('span', { text: 'Мастерство ' + Math.round(c.skill * 100) + '%' })])])]));
       }
       wrap.appendChild(this.squadTable(club));

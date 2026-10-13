@@ -881,3 +881,7 @@ table.league tr.po td.pos { box-shadow: inset 3px 0 0 #ffd23f; }
 .xi-ga { font-size: 10px; margin-top: 2px; color: #fff; text-shadow: 0 1px 2px #000; }
 @media (max-width: 560px) { .xi-p { width: 70px; } .xi-av .face { width: 44px !important; height: 44px !important; } .xi-nm { max-width: 72px; padding: 2px 4px; } .xi-nm span { font-size: 11px; } .xi-r { right: -8px; font-size: 11px; min-width: 26px; } }
 .xi-scheme { margin-left: 6px; padding: 2px 8px; border-radius: 8px; background: rgba(0,255,135,.15); color: #7dffc0; font-size: 13px; vertical-align: middle; }
+/* черты тренера */
+.coach-tr { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.ct-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; background: rgba(4,245,255,.1); border: 1px solid rgba(4,245,255,.35); color: #bff9ff; }
+.ct-chip.none { background: rgba(255,255,255,.05); border-color: var(--line); color: var(--muted); font-weight: 600; }
