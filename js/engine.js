@@ -297,7 +297,7 @@
     pickPlayer(side, attr, phase, exclude, byPos) {
       const list = this.t[side].onPitch.filter(x => x.p && x.slot.role !== 'GK' && x.p !== exclude);
       if (!list.length) return null;
-      const it = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[phase] + 0.02, 1.5) * Math.pow(this.pa(x.p, attr) * this.fatF(x.p), 1.6) * (phase === 'front' ? this.pm(x.p, 'attackW') : 1) * (byPos ? this.posK(x.p) : 1));
+      const it = U.pickWeighted(list, x => Math.pow(TAC.ROLES[x.slot.role].w[phase] + 0.02, 1.5) * Math.pow(this.pa(x.p, attr) * this.fatF(x.p), 1.6) * (phase === 'front' ? this.pm(x.p, 'attackW') : 1) * this.pm(x.p, attr + 'W') * (byPos ? this.posK(x.p) : 1));
       return it.p;
     }
     plan(side) { return this.t[side].tac.plan; }
@@ -385,7 +385,11 @@
         fx.push({ k: 'gain', t: 1, v: g, text: '+' + Math.round(g) + ' пас' });
         const passer = this.credit(side, 'pas', ph, 0.02 * c[1]);
         // у чужой штрафной точный пас выводит партнёра на удар: заряд момента растёт (неточный — сбивает)
-        if (passer && rp >= 3) {
+        // эгоист у чужой штрафной часто не отдаёт передачу под удар, а идёт в обводку сам
+        if (passer && rp >= 3 && TRAITS.has(passer, 'selfish') && U.rnd() < 0.5) {
+          if (this.log && U.rnd() < 0.5) this.say('trait', `${this.traitNote(passer, 'selfish')} не отдаёт партнёру — идёт сам!`, side);
+          this.solo(side, passer, 'dri', 'tac', dph, rp, c[1], fx);
+        } else if (passer && rp >= 3) {
           if (U.rnd() < this.passMissP(passer)) {
             const lost = Math.min(me.shotCharge, 8 + U.rnd() * 6), cc = 6 + U.rnd() * 6;
             me.shotCharge -= lost;
