@@ -341,7 +341,9 @@
     numF(side, phase) {
       const BASE = { back: 5.1, mid: 5.8, front: 5.0 };
       let w = 0;
-      for (const x of this.t[side].onPitch) if (x.p && x.slot.role !== 'GK') w += TAC.ROLES[x.slot.role].w[phase];
+      for (const x of this.t[side].onPitch) if (x.p && x.slot.role !== 'GK') {
+        w += TAC.ROLES[x.slot.role].w[phase];
+      }
       return U.clamp(0.82 + 0.18 * (w / BASE[phase]), 0.75, 1.22);
     }
     gkVal(side) {
@@ -459,7 +461,7 @@
             fx.push({ k: 'charge', t: 1, text: `Неточный пас: −${Math.round(lost)} к моменту` });
             if (this.log && U.rnd() < 0.5) this.say('tackle', icp ? `${this.pname(icp)} прерывает передачу ${this.pname(passer)} — атаку приходится начинать заново, а соперник готовит ответный выпад.` : `${this.pname(passer)} ошибается с передачей — соперник готовит ответный выпад.`, icp ? OTHER(side) : side);
           } else {
-            const v = this.passCharge(passer, c[1]);
+            const v = this.passCharge(passer, c[1]) * this.olK(side);
             me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
             passer.m.perf += 0.05;   // удачная передача под удар повышает оценку
             this.chainMark(side, passer, 'charged');
@@ -511,7 +513,7 @@
       if (c[5]) { // Позиция: открывания
         const r = R(this.val(side, 'pos', ph), this.val(OTHER(side), 'pos', dph)) * (plan === 'wings' ? 1.35 : 1) * this.tmul(side, 'posAtk');
         if (rp >= 3) {
-          const v = 7 * c[5] * mult * r * this.atkM(side);
+          const v = 7 * c[5] * mult * r * this.atkM(side) * this.olK(side);
           me.shotCharge = Math.min(100, me.shotCharge + v);
           fx.push({ k: 'charge', t: 5, text: '+' + Math.round(v) + ' к моменту' });
         } else {
@@ -568,7 +570,7 @@
       this.mom += gain;
       while (this.mom >= CFG.zoneCost && this.poss === side) {
         if (this.rp(side) >= 4) {
-          me.shotCharge = Math.min(100, me.shotCharge + (this.mom - CFG.zoneCost) * 0.9);
+          me.shotCharge = Math.min(100, me.shotCharge + (this.mom - CFG.zoneCost) * 0.9 * this.olK(side));
           this.mom = 0;
           break;
         }
@@ -727,13 +729,19 @@
       if (def) this.beaten = { side: OTHER(side), def, p, mv: this.moveNo };   // обыгранный защитник может пойти на фол
       if (def) def.m.perf -= 0.02 + Math.max(0, 13 - def.a[oppAttr]) * 0.012;   // защитника обыграли: слабому в этом компоненте — больнее
       if (rp >= 3) {
-        const v = U.clamp((2.5 + diff * 0.8) * Math.min(1.5, 0.7 + n * 0.15) * this.fatF(p), 2, 12);
+        const v = U.clamp((2.5 + diff * 0.8) * Math.min(1.5, 0.7 + n * 0.15) * this.fatF(p), 2, 12) * this.olK(side);
         me.shotCharge = U.clamp(me.shotCharge + v, 0, 100);
         this.chainMark(side, p, 'charged');
         fx.push({ k: 'charge', t: attr === 'dri' ? 2 : 3, text: `+${Math.round(v)} ${what[0]}` });
         if (this.log && v >= 6 && U.rnd() < 0.4) this.say('advance', def ? `${this.pname(p)} ${attr === 'dri' ? 'обыгрывает' : 'убегает от'} ${this.pname(def)}!` : `${this.pname(p)} ${what[3]}!`, side);
       }
       return true;
+    }
+    /* Лишний человек в атаке: каждый подключающийся защитник на поле (и в силах) добавляет +8% к заряду шкалы момента */
+    olK(side) {
+      let k = 1;
+      for (const x of this.t[side].onPitch) if (x.p && !x.p.m.off && TRAITS.has(x.p, 'overlap') && x.p.m.fit >= 40) k += 0.08;
+      return k;
     }
     /* Дополнительная трата сил за индивидуальное действие (с учётом Выносливости, черт и погоды) */
     tire(p, k) {
@@ -899,6 +907,7 @@
       else if (kind === 'fk') q = 0.07 + (this.pa(shooter, 'sho') - 10) * 0.006;
       else if (kind === 'vlong') q = CFG.longShot * 0.6 + 0.02 * (n - 4);
       q *= 1 + me.shotCharge / 100 * 0.6;
+      if (kind !== 'fk' && kind !== 'pen') q *= 1 + (this.olK(side) - 1) * 0.75;   // лишний человек в штрафной оттягивает защитников: больше свободы для удара
       const f = this.fatF(shooter);
       const skill = (kind === 'header' ? this.pa(shooter, 'pos') : this.pa(shooter, 'sho')) * 0.75 * f + this.pa(shooter, 'com') * 0.25 * f;
       // особенности бьющего и соперника
