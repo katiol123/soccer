@@ -36,7 +36,7 @@
     engine: T('Неутомимый', '🔋', '+', 'Устаёт на 35% медленнее остальных.', { me: { drain: 0.65 } }, p => p.a.sta >= 15 ? 3 : 0),
     lazy: T('Не помогает в обороне', '🛋', '−', 'Прессинг команды −6%, отбеги назад −10%, зато сам устаёт меньше.', { team: { press: 0.94, recover: 0.9 }, me: { drain: 0.85 } }, p => FW(p) ? (p.a.tac <= 7 ? 2 : 0.4) : 0.1),
     presser: T('Прессингует без устали', '⚡', '+', 'Прессинг команды +8%, но сам устаёт на 10% быстрее.', { team: { press: 1.08 }, me: { drain: 1.1 } }, p => p.a.sta >= 14 && p.pos !== 'GK' ? 2 : 0.2),
-    recovery: T('Возвращается в оборону', '↩', '+', 'Отбеги назад (жёлтые блоки в обороне) +15%.', { team: { recover: 1.15 } }, p => p.a.pac >= 13 && p.a.sta >= 12 ? 1.5 : 0.2),
+    recovery: T('Возвращается в оборону', '↩', '+', 'Нападающий, который не ленится отрабатывать назад: отбеги команды (жёлтые блоки в обороне) +15%.', { team: { recover: 1.15 } }, p => p.pos === 'FW' ? (p.a.pac >= 13 && p.a.sta >= 12 ? 1.5 : 0.4) : 0),
 
     /* --- атака и владение --- */
     vision: T('Видение поля', '👁', '+', 'Пас команды +12%. У чужой штрафной чаще других берёт на себя передачу под удар (×2.2), реже ошибается и заряжает момент сильнее — главный кандидат в ассистенты.', { team: { pas: 1.12 }, me: { assistW: 2.5, pasW: 2.2 } }, p => p.a.pas >= 15 ? 4 : p.a.pas >= 13 ? 1.5 : 0),
@@ -94,7 +94,9 @@
   const GK_OK = new Set(['argue', 'hothead', 'calm', 'leader', 'nervous', 'clutch', 'bigGame', 'flatTrack', 'homeBird', 'traveller', 'inconsistent', 'steady', 'slowStarter', 'glass', 'iron',
     'sweeper', 'penStopper', 'distributor', 'oneOnOne', 'lineKeeper', 'shaky']);
   const GK_ONLY = new Set(['sweeper', 'penStopper', 'distributor', 'oneOnOne', 'lineKeeper', 'shaky']);
-  function allowed(id, p) { return p.pos === 'GK' ? GK_OK.has(id) : !GK_ONLY.has(id); }
+  // особенности, возможные только на одной позиции
+  const POS_ONLY = { recovery: 'FW', overlap: 'DF', bicycle: 'FW' };
+  function allowed(id, p) { return (!POS_ONLY[id] || POS_ONLY[id] === p.pos) && (p.pos === 'GK' ? GK_OK.has(id) : !GK_ONLY.has(id)); }
 
   function roll(p, rng) {
     rng = rng || Math.random;
@@ -133,7 +135,8 @@
 
   function ensure(clubs, seed) {
     const rng = U.seeded(seed || 77);
-    clubs.forEach(c => c.players.forEach(p => { if (!p.tr || p.tr.some(id => !LIST[id] || !allowed(id, p))) p.tr = roll(p, rng); }));
+    // старые сохранения: недопустимые для позиции особенности просто снимаются, остальные остаются
+    clubs.forEach(c => c.players.forEach(p => { if (!p.tr) p.tr = roll(p, rng); else p.tr = p.tr.filter(id => LIST[id] && allowed(id, p)); }));
   }
 
   G.TRAITS = { LIST, roll, value, has, ensure };

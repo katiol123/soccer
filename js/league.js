@@ -608,7 +608,7 @@
     if (st.v === 1) { st.lg = 'eng1'; st.clubs.forEach(c => { c.league = 'eng1'; }); st.v = 2; }
     st.clubs.forEach(c => { if (!c.league) c.league = st.lg; if (c.cap == null) c.cap = DATA.CAPACITY[c.id] || 30; });
     attach(st);
-    if (G.TRAITS) G.TRAITS.ensure(st.clubs);
+    if (G.TRAITS) { G.TRAITS.ensure(st.clubs); if (st.fa) G.TRAITS.ensure([{ players: st.fa }]); }
     // форма пересчитывается всегда: точка отсчёта — типичная оценка позиции (могла измениться между версиями)
     st.clubs.forEach(c => c.players.forEach(p => { if (!p.lastR) p.lastR = []; p.form = TAC.computeForm(p); }));
     (st.fa || []).forEach(p => { if (!p.lastR) p.lastR = []; p.form = TAC.computeForm(p); });
