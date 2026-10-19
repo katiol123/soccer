@@ -128,11 +128,69 @@
       return e;
     }
 
+    /* Матч воспроизводим: вся случайность внутри матча идёт из собственного генератора с «семенем».
+       Снимок (состав, тактика, свежесть, настроение, форма) + семя + журнал действий человека = точный повтор */
     constructor(cfg) {
+      this.seed = cfg.seed != null ? cfg.seed : Math.floor(Math.random() * 2147483647);
+      this.rngM = U.seeded(this.seed);
+      this._d = 0; this.actNo = 0;
+      const human = (cfg.home.ctrl === 'human' || cfg.away.ctrl === 'human');
+      this.rec = cfg.replay ? null : human ? [] : null;
+      if (!cfg.replay) this.snap = Match.snapshot(cfg, this.seed);
+      this.replay = cfg.replay || null;
+      this._in(() => this.init(cfg));
+      // внешние точки входа: выполняются на генераторе матча; действия в матчах с человеком записываются
+      for (const k of ['playMove', 'resolvePenalty', 'substitute', 'setTactic', 'setFormation', 'shuffleBoard', 'handleInjury', 'swapPitch']) {
+        const f = this[k];
+        this[k] = (...a) => {
+          if (this._d) return f.apply(this, a);
+          if (this.rec) this.rec.push([k].concat(JSON.parse(JSON.stringify(a))));
+          this.actNo++;
+          return this._in(() => f.apply(this, a));
+        };
+      }
+    }
+    _in(fn) {
+      if (this._d) return fn();
+      this._d = 1;
+      try { return U.withRng(this.rngM, fn); } finally { this._d = 0; }
+    }
+    /* Снимок для повтора: всё, что меняется по ходу сезона и влияет на матч */
+    static snapshot(cfg, seed) {
+      const side = s => {
+        const c = cfg[s].club, t = cfg[s].tactics;
+        const tac = {}; for (const k in t) if (k !== 'notes') tac[k] = t[k];
+        const ids = (t.lineup || []).concat(t.bench || []).filter(Boolean);
+        const map = TAC.playerMap(c);
+        // настроение и форма округляются у самого игрока — так снимок короткий и при этом точный
+        const pl = ids.map(id => {
+          const p = map[id]; if (!p) return null;
+          if (p.mood != null) p.mood = Math.round(p.mood * 100) / 100;
+          if (p.form != null) p.form = Math.round(p.form * 10000) / 10000;
+          return [p.fit, p.mood == null ? null : p.mood, p.form == null ? null : p.form];
+        });
+        return { club: c.id, ctrl: cfg[s].ctrl || 'ai', tac: JSON.parse(JSON.stringify(tac)), pl, tr: TAC.teamRating(c), coach: c.coach ? c.coach.id : null };
+      };
+      return { v: 1, seed, turns: cfg.turns || 24, inter: !!cfg.interactive, env: cfg.env ? JSON.parse(JSON.stringify(cfg.env)) : null, home: side('home'), away: side('away') };
+    }
+    shuffleBoard() { this.board.shuffle(); }
+    handleInjury(side, pid) {
+      const p = this.t[side].players().find(x => x.id === pid);
+      if (p && G.AI) G.AI.handleInjury(this, side, p);
+    }
+    swapPitch(side, i, j) {
+      const ts = this.t[side], a = ts.onPitch[i], b = ts.onPitch[j];
+      if (!a || !b) return;
+      if ((a.slot.role === 'GK') !== (b.slot.role === 'GK') && !(a.p && b.p)) return;
+      const t = a.p; a.p = b.p; b.p = t;
+    }
+
+    init(cfg) {
       this.cfg = cfg;
-      this.rng = cfg.rng || Math.random;
+      this.rng = cfg.rng || this.rngM;
       this.H = cfg.turns || 24; // ходов (суммарно на обе команды) в тайме
-      this.log = !!cfg.log;
+      // комментарий ведётся всегда: так расход случайных чисел не зависит от режима и матч воспроизводим
+      this.log = true;
       this.interactive = !!cfg.interactive;
       this.env = cfg.env || null;
       this.wx = WEATHER[(this.env && this.env.weather) || 'clear'] || WEATHER.clear;
@@ -1058,7 +1116,7 @@
       for (const s of ['home', 'away']) {
         const ts = this.t[s];
         const conceded = this.score[OTHER(s)];
-        const all = ts.club.players.filter(p => p.m && p.m.played);
+        const all = ts.club.players.filter(p => p.m && p.m.played).sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));   // порядок не зависит от списка клуба (повтор)
         for (const p of all) {
           let r = 6.15 + p.m.perf + res[s] * 0.35;
           if (p.pos === 'GK') r += conceded === 0 ? 0.8 : 0.05 - 0.15 * conceded;   // сухой матч — заметный бонус, пропущенные — небольшой минус
@@ -1115,9 +1173,9 @@
       let guard = 0;
       while (!this.over && guard++ < 2000) {
         if (this.pending) { this.resolvePenalty(); continue; }
-        if (this.injPending) { const ip = this.injPending; this.injPending = null; if (G.AI) G.AI.handleInjury(this, ip.side, ip.p); }
+        if (this.injPending) { const ip = this.injPending; this.injPending = null; this.handleInjury(ip.side, ip.p.id); }
         const mv = G.AI.chooseMove(this, this.cur);
-        if (!mv) { this.board.shuffle(); continue; }
+        if (!mv) { this.shuffleBoard(); continue; }
         this.playMove(mv.a, mv.b);
       }
       return this;

@@ -403,7 +403,7 @@
         const row = el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''));
         row.append(
           el('div.fx-t.h', null, [el('span', null, [UI.cname(h), el('small.fx-pos', { text: ` (${place(h.id)})` })]), UI.crest(h, 26)]),
-          el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}` : '– : –' }),
+          this.scoreEl(f, f.res ? `${f.res.hs} : ${f.res.as}` : '– : –'),
           el('div.fx-t.a', null, [UI.crest(a, 26), el('span', null, [UI.cname(a), el('small.fx-pos', { text: ` (${place(a.id)})` })])])
         );
         const acts = el('div.fx-act');
@@ -482,7 +482,7 @@
         } else acts.appendChild(el('button.btn.small.ghost', { text: 'Отчёт', onclick: () => this.report(f) }));
         box.appendChild(el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''), null, [
           el('div.fx-t.h', null, [el('span', null, [UI.cname(h), el('small.fx-pos', { text: ` (${lg(h)})` })]), UI.crest(h, 24)]),
-          el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –' }),
+          this.scoreEl(f, f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –'),
           el('div.fx-t.a', null, [UI.crest(a, 24), el('span', null, [UI.cname(a), el('small.fx-pos', { text: ` (${lg(a)})` })])]), acts]));
       });
       const left = ties.filter(f => !f.res && !(u && (f.h === u || f.a === u)));
@@ -701,7 +701,7 @@
           const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a), w = LEAGUE.winner(f), mine = u && (f.h === u || f.a === u);
           sec.appendChild(el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''), { onclick: () => f.res && this.report(f) }, [
             el('div.fx-t.h' + (w === h.id ? '.win' : ''), null, [el('span', null, [UI.cname(h), el('small.fx-pos', { text: ` (${LEAGUE.leagueInfo(st, h.league).short})` })]), UI.crest(h, 22)]),
-            el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –' }),
+            this.scoreEl(f, f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –'),
             el('div.fx-t.a' + (w === a.id ? '.win' : ''), null, [UI.crest(a, 22), el('span', null, [UI.cname(a), el('small.fx-pos', { text: ` (${LEAGUE.leagueInfo(st, a.league).short})` })])])]));
         });
         if (R.ties.length || R === cup.rounds[cup.rounds.length - 1]) card.appendChild(sec);
@@ -900,7 +900,28 @@
       });
       tbl.style.setProperty('--home', GFX.teamColor(h)); tbl.style.setProperty('--away', GFX.teamColor(a));
       content.appendChild(tbl);
-      UI.modal({ title: 'Отчёт о матче', content, buttons: [{ text: 'Закрыть', cls: 'ghost' }] });
+      const canRp = G.REPLAY && G.REPLAY.can(st, f);
+      UI.modal({ title: 'Отчёт о матче', content, buttons: [{ text: 'Закрыть', cls: 'ghost', value: false }].concat(canRp ? [{ text: '▶ Смотреть повтор', cls: 'primary', value: 'rp' }] : []) }).result.then(v => { if (v === 'rp') this.replayMatch(f); });
+    },
+
+    /* Счёт матча: клик — повтор (если доступен), иначе — отчёт */
+    scoreEl(f, text) {
+      const rp = !!(f.res && G.REPLAY && G.REPLAY.can(this.st, f));
+      return el('div.fx-s' + (rp ? '.rp' : ''), { text, title: rp ? 'Смотреть повтор ▶' : '', onclick: f.res ? (e) => { e.stopPropagation(); this.replayMatch(f); } : null });
+    },
+
+    /* Повтор сыгранного матча: точное воспроизведение по снимку, без влияния на сезон */
+    async replayMatch(f) {
+      if (!f || !f.res || this._busy) return;
+      const m = G.REPLAY && G.REPLAY.build(this.st, f);
+      if (!m) { UI.toast('Повтор этого матча недоступен — показываю отчёт.'); return this.report(f); }
+      const back = this.tab;
+      this._busy = true;
+      try {
+        await this.playMatchScreen(m);
+        await G.MatchScreen.fullTime(m);
+      } finally { this._busy = false; }
+      this.hub(back);
     },
 
     async nextRound() {
@@ -990,7 +1011,7 @@
       const st = this.st, h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a);
       const my = f.h === uid ? f.res.hs : f.res.as, th = f.h === uid ? f.res.as : f.res.hs;
       const r = my > th ? 'W' : my < th ? 'L' : 'D';
-      return el('div.res-row', { onclick: () => this.report(f) }, [el('span.form-b.' + r, { text: { W: 'В', D: 'Н', L: 'П' }[r] }), el('span', { text: `${h.short} ${f.res.hs}:${f.res.as} ${a.short}` })]);
+      return el('div.res-row', { onclick: () => this.replayMatch(f), title: G.REPLAY && G.REPLAY.can(this.st, f) ? 'Смотреть повтор ▶' : 'Отчёт о матче' }, [el('span.form-b.' + r, { text: { W: 'В', D: 'Н', L: 'П' }[r] }), el('span', { text: `${h.short} ${f.res.hs}:${f.res.as} ${a.short}` })]);
     },
 
     tabTable(body) {
@@ -1015,7 +1036,7 @@
         const h = LEAGUE.club(st, f.h), a = LEAGUE.club(st, f.a), w = LEAGUE.winner(f);
         return el('div.fx-row.po' + (f.res ? '.done' : ''), { onclick: () => f.res && this.report(f) }, [el('small.po-tag', { text: tag }),
           el('div.fx-t.h' + (w === h.id ? '.win' : ''), null, [UI.cname(h), UI.crest(h, 22)]),
-          el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' (пен.)' : ''}` : '– : –' }),
+          this.scoreEl(f, f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' (пен.)' : ''}` : '– : –'),
           el('div.fx-t.a' + (w === a.id ? '.win' : ''), null, [UI.crest(a, 22), UI.cname(a)])]);
       };
       if (!semis.length) {
@@ -1073,7 +1094,7 @@
           const mine = st.userClub && (f.h === st.userClub || f.a === st.userClub);
           const row = el('div.fx-row' + (mine ? '.mine' : '') + (f.res ? '.done' : ''), { onclick: () => f.res && this.report(f) }, [
             el('div.fx-t.h', null, [el('span', null, [UI.cname(h), el('small.fx-pos', { text: ` (${place(h.id)})` })]), UI.crest(h, 24)]),
-            el('div.fx-s', { text: f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –' }),
+            this.scoreEl(f, f.res ? `${f.res.hs} : ${f.res.as}${f.res.pen ? ' п.' : ''}` : '– : –'),
             el('div.fx-t.a', null, [UI.crest(a, 24), el('span', null, [UI.cname(a), el('small.fx-pos', { text: ` (${place(a.id)})` })])])
           ]);
           list.appendChild(row);

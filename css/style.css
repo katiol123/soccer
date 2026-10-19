@@ -885,3 +885,6 @@ table.league tr.po td.pos { box-shadow: inset 3px 0 0 #ffd23f; }
 .coach-tr { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
 .ct-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; background: rgba(4,245,255,.1); border: 1px solid rgba(4,245,255,.35); color: #bff9ff; }
 .ct-chip.none { background: rgba(255,255,255,.05); border-color: var(--line); color: var(--muted); font-weight: 600; }
+.replay-tag { padding: 4px 10px; border-radius: 8px; background: rgba(255,59,92,.18); border: 1px solid rgba(255,59,92,.5); color: #ff8fa3; font-weight: 800; font-size: 12px; letter-spacing: .06em; }
+.fx-s.rp { cursor: pointer; border-radius: 8px; transition: background .15s; } .fx-s.rp:hover { background: rgba(0,255,135,.15); color: #7dffc0; }
+.fx-s.rp::after { content: ' ▶'; font-size: .7em; opacity: .6; }

@@ -348,6 +348,8 @@
     if (motm && motm.mood != null) motm.mood = Math.min(100, motm.mood + 5);
     if (!fixture.cup && !fixture.po) totwAdd(st, fixture, match);
     fixture.res = { hs: match.score.home, as: match.score.away, goals, stats, motm: motm ? motm.name : null, motmR: motm ? motm.m.rating : null, watched: !!match.watched };
+    // данные для повтора: снимок + журнал действий человека (в течение сезона)
+    if (match.snap) fixture.rp = { season: st.season, s: match.snap, r: match.rec && match.rec.length ? match.rec : undefined };
     // плей-офф: ничья — серия пенальти (шанс зависит от силы и хладнокровия)
     if ((fixture.po || fixture.cup) && fixture.res.hs === fixture.res.as) {
       const ch = c => TAC.teamRating(c) + U.avg(c.players.map(p => p.a.com)) * 0.15;
@@ -507,6 +509,7 @@
   }
 
   function newSeason(st) {
+    st.coachArc = {};   // архив тренеров нужен только для повторов текущего сезона
     const sum = seasonSummary(st);
     const table = standings(st);
     st.history = st.history || [];

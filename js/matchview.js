@@ -25,7 +25,8 @@
     constructor(opts) {
       this.o = opts;
       this.match = opts.match;
-      this.watch = this.match.t.home.ctrl === 'ai' && this.match.t.away.ctrl === 'ai';
+      this.replay = this.match.replay || null;   // повтор: без управления, ходы человека — из журнала
+      this.watch = !!this.replay || (this.match.t.home.ctrl === 'ai' && this.match.t.away.ctrl === 'ai');
       this.speed = this.watch ? 1.5 : 1;
       this.autoHuman = false;
       this.feedCount = 0;
@@ -33,6 +34,7 @@
     }
 
     humanSide() {
+      if (this.replay) return null;
       if (this.match.t.home.ctrl === 'human') return 'home';
       if (this.match.t.away.ctrl === 'human') return 'away';
       return null;
@@ -94,7 +96,8 @@
       const spd = el('div.seg.speed');
       [[1, '×1'], [1.5, '×1.5'], [2.5, '×2.5'], [5, '×5']].forEach(([v, t]) => spd.appendChild(el('button' + (v === this.speed ? '.on' : ''), { text: t, onclick: (e) => { this.setSpeed(v); U.$$('button', spd).forEach(b => b.classList.remove('on')); e.target.classList.add('on'); } })));
       bar.appendChild(spd);
-      if (this.watch) bar.appendChild(el('button.btn.small.ghost', { text: '⏭ Досимулировать', onclick: () => { this.skip = true; } }));
+      if (this.replay) bar.appendChild(el('span.replay-tag', { text: '⏮ ПОВТОР' }));
+      if (this.watch) bar.appendChild(el('button.btn.small.ghost', { text: this.replay ? '⏭ К концу' : '⏭ Досимулировать', onclick: () => { this.skip = true; } }));
       this.sndBtn = el('button.icon-btn', { title: 'Звук', text: SFX.on ? '🔊' : '🔇', onclick: () => { SFX.on = !SFX.on; this.sndBtn.textContent = SFX.on ? '🔊' : '🔇'; if (this.o.onSound) this.o.onSound(SFX.on); } });
       bar.appendChild(this.sndBtn);
       center.appendChild(bar);
@@ -126,11 +129,13 @@
       this.renderTab();
       await U.sleep(400);
       SFX.whistle(true);
-      this.bv.banner('НАЧАЛО МАТЧА');
+      this.bv.banner(this.replay ? 'ПОВТОР МАТЧА' : 'НАЧАЛО МАТЧА');
       await U.sleep(900 / this.speed);
+      const logMode = this.replay && this.replay.log.length;
       while (!m.over) {
         if (this.skip) { await this.skipToEnd(); break; }
         if (m.halftime) { m.halftime = false; await this.halftime(); continue; }
+        if (logMode) { await this.replayStep(); continue; }
         if (m.pending) { await this.penalty(); continue; }
         if (m.injPending) { await this.injuryPause(); continue; }
         await this.turn();
@@ -142,12 +147,29 @@
       return m;
     }
 
+    /* Повтор матча с человеком: следующее действие из журнала */
+    async replayStep() {
+      const m = this.match, R = this.replay;
+      if (m.injPending) { m.injPending = null; return; }
+      const e = R.log[R.i++];
+      if (!e) { m.simulate(); return; }
+      const [k, ...a] = e;
+      if (k === 'playMove') {
+        this.renderTurn();
+        await U.sleep(380 / this.speed);
+        this.bv.showHint({ a: a[0], b: a[1] });
+        await U.sleep(260 / this.speed);
+        this.bv.clearHint();
+        await this.execute(a[0], a[1]);
+      } else if (k === 'resolvePenalty') await this.penalty(a);
+      else if (k === 'shuffleBoard') { m.shuffleBoard(); await this.bv.shuffleAnim(); }
+      else { m[k](...a); this.renderAll(); }
+    }
+
     async skipToEnd() {
       const m = this.match;
       this.bv.setEnabled(false);
-      m.log = false;
-      m.simulate();
-      m.log = true;
+      if (this.replay && G.REPLAY) G.REPLAY.runHeadless(m); else m.simulate();
       this.bv.sync();
       this.renderAll();
     }
@@ -162,7 +184,7 @@
       } else {
         await U.sleep((this.watch ? 380 : 520) / this.speed);
         const choice = AI.chooseMove(m, side, ts.ctrl === 'human' ? { skill: 0.9 } : null);
-        if (!choice) { m.board.shuffle(); await this.bv.shuffleAnim(); return; }
+        if (!choice) { m.shuffleBoard(); await this.bv.shuffleAnim(); return; }
         this.bv.showHint(choice);
         await U.sleep(260 / this.speed);
         this.bv.clearHint();
@@ -387,7 +409,7 @@
       m.injPending = null;
       const ts = m.t[side];
       if (!ts.onPitch.some(x => x.p === p)) return;
-      if (this.autoHuman) { AI.handleInjury(m, side, p); this.renderAll(); return; }
+      if (this.autoHuman) { m.handleInjury(side, p.id); this.renderAll(); return; }
       this.renderAll();
       this.bv.banner('ТРАВМА');
       const content = el('div', null, [el('p', { text: `${p.name} получил травму и не может продолжать в полную силу (свежесть ${Math.round(p.m.fit)}%).` }), el('p.muted', { text: ts.subsLeft > 0 ? `Замен осталось: ${ts.subsLeft}.` : 'Замен не осталось — игроку придётся доигрывать.' })]);
@@ -405,11 +427,11 @@
     }
 
     /* ---------- пенальти ---------- */
-    async penalty() {
+    async penalty(forced) {
       const m = this.match, side = m.pending.side, ts = m.t[side], ds = m.other(side);
       const kicker = m.pickShooter(side, 'pen'), gk = m.t[ds].gk();
       const hs = this.autoHuman ? null : this.humanSide();
-      let kDir = null, gDir = null;
+      let kDir = forced ? forced[0] : null, gDir = forced ? forced[1] : null;
       const goal = el('div.pen-goal', null, [el('div.pen-net'), el('div.pen-keeper', { text: '🧤' }), el('div.pen-ball', { text: '⚽' })]);
       const info = el('div.pen-info', { text: `${kicker ? kicker.name : ''} против ${gk ? gk.name : 'вратаря'}` });
       const zones = el('div.pen-zones');

@@ -510,7 +510,12 @@
     return s;
   }
 
+  /* Выбор хода детерминирован (своё «семя» на каждый ход матча) — нужно для повтора матча */
   function chooseMove(match, side, opts) {
+    const seed = (((match.seed || 0) * 31 + match.moveNo * 977 + (side === 'home' ? 1 : 2) + (opts && opts.skill != null ? Math.round(opts.skill * 100) : 0)) >>> 0) || 1;
+    return U.withRng(U.seeded(seed), () => chooseMoveInner(match, side, opts));
+  }
+  function chooseMoveInner(match, side, opts) {
     opts = opts || {};
     const moves = match.board.validMoves();
     if (!moves.length) return null;

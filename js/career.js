@@ -286,6 +286,7 @@
       if (gap < 5) return;
       if (U.rnd() > 0.2 + (gap - 5) * 0.12) return;
       const old = c.coach;
+      archiveCoach(st, old);
       c.coach = genCoach(c);
       st.sacks[c.id + '@' + st.season] = st.round;
       st.news.push({ r: st.round, text: `🔥 «${c.name}» увольняет ${old.name} (${i + 1}-е место при цели ${c.fin.goal || c.fin.target}-е). Новый главный тренер — ${c.coach.name} (${c.coach.nat}): ${c.coach.formations[0]}, «${TAC.PLANS[c.coach.plan].n}».` });
@@ -314,6 +315,7 @@
   }
   function takeJob(st, cid) {
     const old = club(st, st.userClub), nc = club(st, cid);
+    archiveCoach(st, old.coach);
     old.coach = genCoach(old);
     st.news.push({ r: st.round, text: `«${old.name}» назначает нового тренера: ${old.coach.name}.` });
     st.userClub = nc.id;
@@ -328,7 +330,7 @@
   }
   function toSpectator(st) {
     const old = club(st, st.userClub);
-    if (old) old.coach = genCoach(old);
+    if (old) { archiveCoach(st, old.coach); old.coach = genCoach(old); }
     st.mode = 'spectator'; st.userClub = null; st.userTactics = null; st.board = null; st.sacked = null;
   }
 
@@ -345,6 +347,12 @@
     }
   }
 
+  /* Архив тренеров сезона: нужен для повторов матчей, сыгранных до увольнения */
+  function archiveCoach(st, co) {
+    if (!co || !co.id) return;
+    st.coachArc = st.coachArc || {};
+    st.coachArc[co.id] = JSON.parse(JSON.stringify(co));
+  }
   /* Черты тренеров: недостающие — разыграть по уровню лиги; в каждой лиге хотя бы один тренер ИИ с двумя чертами */
   function coachTraits(st) {
     const CT = G.CTRAITS;

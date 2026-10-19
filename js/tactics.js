@@ -158,6 +158,7 @@
   }
 
   function teamRating(club) {
+    if (club._trFixed != null) return club._trFixed;   // повтор матча: сила клуба на момент игры
     const f = club.coach && club.coach.formations ? club.coach.formations[0] : '4-4-2';
     const xi = bestXI(club, f, { fitWeight: 0, noForm: true });
     return lineupRating(club, f, xi.lineup);

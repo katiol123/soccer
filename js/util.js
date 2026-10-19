@@ -16,6 +16,12 @@
   const U = {
     rnd: Math.random,
     seeded: mulberry32,
+    /* Выполнить fn, временно подменив источник случайности (U.rnd и Math.random) — для воспроизводимых матчей */
+    withRng(rng, fn) {
+      const r0 = U.rnd, m0 = Math.random;
+      U.rnd = rng; Math.random = rng;
+      try { return fn(); } finally { U.rnd = r0; Math.random = m0; }
+    },
     rand(a, b) { return a + U.rnd() * (b - a); },
     randInt(a, b) { return Math.floor(a + U.rnd() * (b - a + 1)); },
     chance(p) { return U.rnd() < p; },

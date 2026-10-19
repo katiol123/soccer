@@ -382,11 +382,7 @@
       getSlots: () => ts.onPitch,
       getBench: () => ts.bench.filter(p => !ts.used.has(p.id)),
       subsLeft: () => ts.subsLeft,
-      swapPitch(i, j) {
-        const a = ts.onPitch[i], b = ts.onPitch[j];
-        if ((a.slot.role === 'GK') !== (b.slot.role === 'GK') && !(a.p && b.p)) return;
-        const t = a.p; a.p = b.p; b.p = t;
-      },
+      swapPitch(i, j) { match.swapPitch(side, i, j); },
       swapBench(i, p) {
         const x = ts.onPitch[i];
         if (!x.p) return 'Удалённого игрока заменить нельзя';
